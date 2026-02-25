@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 *.env
+dev.ps1
 
 # Allow the example file — this is safe to commit
 !.env.example
@@ -93,4 +94,5 @@ testdata/generated/
 
 # ── Claude Code ───────────────────────────────────────────────────────────────
 # Claude Code session files — local only
+.claude/
 .claude/sessions/

@@ -1,0 +1,203 @@
+package session
+
+import (
+	"encoding/json"
+	"net"
+	"net/http"
+	"time"
+
+	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/middleware"
+)
+
+const refreshCookieName = "haven_refresh"
+
+// Handler serves auth endpoints.
+type Handler struct {
+	svc          *Service
+	secureCookie bool // false only in tests
+}
+
+// NewHandler constructs the session handler.
+func NewHandler(svc *Service, secureCookie bool) *Handler {
+	return &Handler{svc: svc, secureCookie: secureCookie}
+}
+
+// Register handles POST /api/haven/auth/register.
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	// TODO: invitation-gated registration — validate invite token first
+	// TODO: parse body, validate, call session.Service (or user.Service) to create user
+	// TODO: issue token pair, set refresh cookie, return access token
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Login handles POST /api/haven/auth/login.
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DeviceName  string `json:"device_name"`
+		Platform    string `json:"platform"`
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		return
+	}
+
+	pair, err := h.svc.Login(r.Context(), LoginParams{
+		Email:       req.Email,
+		Password:    req.Password,
+		DeviceName:  req.DeviceName,
+		Platform:    req.Platform,
+		Fingerprint: req.Fingerprint,
+		UserAgent:   r.UserAgent(),
+		IPAddress:   remoteIP(r),
+	})
+	if err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+
+	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"access_token": pair.AccessToken,
+	})
+}
+
+// Refresh handles POST /api/haven/auth/refresh.
+// Reads the refresh token from the HttpOnly cookie (web) or Authorization header (mobile).
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	raw := refreshTokenFromRequest(r)
+	if raw == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no refresh token")
+		return
+	}
+
+	pair, err := h.svc.Refresh(r.Context(), raw)
+	if err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+
+	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"access_token": pair.AccessToken,
+	})
+}
+
+// Logout handles POST /api/haven/auth/logout.
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		return
+	}
+	if err := h.svc.Logout(r.Context(), claims.Subject, claims.DeviceID); err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+	h.clearRefreshCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LogoutAll handles POST /api/haven/auth/logout-all.
+func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		return
+	}
+	if err := h.svc.LogoutAll(r.Context(), claims.Subject); err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+	h.clearRefreshCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Validate handles GET /api/haven/validate — called by Luma on every request.
+func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"user_id":       claims.Subject,
+		"device_id":     claims.DeviceID,
+		"instance_role": claims.Role,
+	})
+}
+
+func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    raw,
+		Path:     "/api/haven/auth/refresh",
+		Expires:  expires,
+		MaxAge:   int(time.Until(expires).Seconds()),
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/api/haven/auth/refresh",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// refreshTokenFromRequest extracts the raw refresh token from either the
+// HttpOnly cookie (web clients) or X-Refresh-Token header (mobile clients).
+func refreshTokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie(refreshCookieName); err == nil {
+		return c.Value
+	}
+	return r.Header.Get("X-Refresh-Token")
+}
+
+func errorCode(err error) string {
+	switch {
+	case pkgerrors.Is(err, pkgerrors.ErrInvalidCredentials):
+		return "INVALID_CREDENTIALS"
+	case pkgerrors.Is(err, pkgerrors.ErrAccountLocked):
+		return "ACCOUNT_LOCKED"
+	case pkgerrors.Is(err, pkgerrors.ErrTokenReuseDetected):
+		return "TOKEN_REUSE_DETECTED"
+	case pkgerrors.Is(err, pkgerrors.ErrTokenRevoked):
+		return "TOKEN_REVOKED"
+	case pkgerrors.Is(err, pkgerrors.ErrTokenExpired):
+		return "TOKEN_EXPIRED"
+	default:
+		return "ERROR"
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, code, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": msg})
+}
+
+// remoteIP strips the port from r.RemoteAddr so it can be stored as INET.
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr // already just an IP (unusual but safe)
+	}
+	return host
+}
