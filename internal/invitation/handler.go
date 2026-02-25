@@ -1,0 +1,112 @@
+package invitation
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/middleware"
+)
+
+// Handler serves invitation endpoints.
+type Handler struct {
+	svc *Service
+}
+
+// NewHandler constructs the invitation handler.
+func NewHandler(svc *Service) *Handler {
+	return &Handler{svc: svc}
+}
+
+// Create handles POST /api/haven/invitations.
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	// TODO: verify caller has invitation:create permission
+
+	var req struct {
+		Email string `json:"email"`
+		Note  string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	rawToken, inv, err := h.svc.Create(r.Context(), CreateParams{
+		InviterID: claims.Subject,
+		Email:     req.Email,
+		Note:      req.Note,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// The join URL encodes the raw token — clients show a QR code and copyable link.
+	// TODO: derive base URL from config
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":         inv.ID,
+		"join_url":   "/join?token=" + rawToken,
+		"expires_at": inv.ExpiresAt,
+	})
+}
+
+// List handles GET /api/haven/invitations.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	invs, err := h.svc.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, invs)
+}
+
+// Revoke handles DELETE /api/haven/invitations/{id}.
+func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.svc.Revoke(r.Context(), id); err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Join handles GET /api/haven/join — renders the invitation landing page data.
+func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
+	rawToken := r.URL.Query().Get("token")
+	if rawToken == "" {
+		writeError(w, http.StatusBadRequest, "token required")
+		return
+	}
+	inv, err := h.svc.Validate(r.Context(), rawToken)
+	if err != nil {
+		// Do not distinguish invalid/expired/revoked — same message always.
+		writeError(w, http.StatusNotFound, "invitation not found or expired")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"invitation_id": inv.ID,
+		"email":         inv.Email,
+		"note":          inv.Note,
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
+		Code:    http.StatusText(status),
+		Message: msg,
+	})
+}

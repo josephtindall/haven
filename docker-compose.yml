@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haven
+      POSTGRES_USER: haven_app
+      POSTGRES_PASSWORD: ${HAVEN_DB_PASS}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haven_app -d haven"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  haven:
+    build: .
+    restart: unless-stopped
+    environment:
+      HAVEN_DB_HOST: postgres
+      HAVEN_DB_PASS: ${HAVEN_DB_PASS}
+      HAVEN_REDIS_ADDR: redis:6379
+      HAVEN_JWT_SIGNING_KEY: ${HAVEN_JWT_SIGNING_KEY}
+      HAVEN_JWT_SIGNING_KEY_PREV: ${HAVEN_JWT_SIGNING_KEY_PREV:-}
+      HAVEN_PORT: 8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    # Haven is not exposed directly — it sits behind the Caddy proxy in the
+    # consuming project's compose file. Expose port locally for development only.
+    # ports:
+    #   - "8080:8080"
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  internal:

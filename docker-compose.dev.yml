@@ -1,0 +1,61 @@
+# Development compose — postgres and redis are exposed on localhost for tooling.
+# Haven uses live reload via Air (https://github.com/air-verse/air).
+# Air is pulled at image build time; no local Go install required.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: haven
+      POSTGRES_USER: haven_app
+      POSTGRES_PASSWORD: ${HAVEN_DB_PASS:-devpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U haven_app -d haven" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  haven:
+    build:
+      context: .
+      target: builder # reuse the builder stage — has Go toolchain + Air
+      dockerfile: Dockerfile
+    # Override entrypoint to run Air for live reload.
+    entrypoint: [ "sh", "-c", "go install github.com/air-verse/air@latest && air -c .air.toml" ]
+    working_dir: /app
+    volumes:
+      - .:/app # mount source so Air detects changes
+      - gomod_cache:/go/pkg/mod
+    ports:
+      - "8080:8080"
+    environment:
+      HAVEN_DB_HOST: postgres
+      HAVEN_DB_PASS: ${HAVEN_DB_PASS:-devpassword}
+      HAVEN_DB_SSL_MODE: disable
+      HAVEN_REDIS_ADDR: redis:6379
+      # Dev signing key: 64 zero bytes in hex. NEVER use in production.
+      HAVEN_JWT_SIGNING_KEY: ${HAVEN_JWT_SIGNING_KEY:-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}
+      HAVEN_PORT: 8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata_dev:
+  gomod_cache:
