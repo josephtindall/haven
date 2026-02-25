@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/josephtindall/haven/internal/user"
@@ -69,7 +70,10 @@ func (r *Repository) Create(ctx context.Context, u *user.User) error {
 	_, err := r.db.Exec(ctx, q,
 		u.ID, u.Email, u.DisplayName, u.PasswordHash, u.InstanceRoleID, u.AvatarSeed)
 	if err != nil {
-		// TODO: detect unique_violation for email and return pkgerrors.ErrEmailTaken
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return pkgerrors.ErrEmailTaken
+		}
 		return fmt.Errorf("user.postgres.Create: %w", err)
 	}
 	return nil
@@ -149,6 +153,53 @@ func (r *Repository) UnlockAccount(ctx context.Context, id string) error {
 		return fmt.Errorf("user.postgres.UnlockAccount: %w", err)
 	}
 	return nil
+}
+
+// RegisterAtomic creates a new member user, their preferences row, and marks
+// the invitation as accepted — all inside a single transaction.
+func (r *Repository) RegisterAtomic(ctx context.Context, params user.RegisterParams) (string, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("user.postgres.RegisterAtomic begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	const insertUser = `
+		INSERT INTO haven.users (email, display_name, password_hash, instance_role_id)
+		VALUES ($1, $2, $3, 'builtin:instance-member')
+		RETURNING id`
+
+	var userID string
+	err = tx.QueryRow(ctx, insertUser, params.Email, params.DisplayName, params.PasswordHash).Scan(&userID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return "", pkgerrors.ErrEmailTaken
+		}
+		return "", fmt.Errorf("user.postgres.RegisterAtomic insert user: %w", err)
+	}
+
+	const insertPrefs = `INSERT INTO haven.user_preferences (user_id) VALUES ($1)`
+	if _, err := tx.Exec(ctx, insertPrefs, userID); err != nil {
+		return "", fmt.Errorf("user.postgres.RegisterAtomic insert prefs: %w", err)
+	}
+
+	const acceptInv = `
+		UPDATE haven.invitations
+		SET status = 'accepted', accepted_at = NOW()
+		WHERE id = $1 AND status = 'pending'`
+	tag, err := tx.Exec(ctx, acceptInv, params.InvitationID)
+	if err != nil {
+		return "", fmt.Errorf("user.postgres.RegisterAtomic accept invitation: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return "", pkgerrors.ErrTokenInvalid
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("user.postgres.RegisterAtomic commit: %w", err)
+	}
+	return userID, nil
 }
 
 // scanUser reads a haven.users row from a pgx.Row.

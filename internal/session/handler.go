@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
 	"github.com/josephtindall/haven/pkg/middleware"
 )
@@ -25,10 +26,45 @@ func NewHandler(svc *Service, secureCookie bool) *Handler {
 
 // Register handles POST /api/haven/auth/register.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	// TODO: invitation-gated registration — validate invite token first
-	// TODO: parse body, validate, call session.Service (or user.Service) to create user
-	// TODO: issue token pair, set refresh cookie, return access token
-	w.WriteHeader(http.StatusNotImplemented)
+	var req struct {
+		InvitationID string `json:"invitation_id"`
+		Email        string `json:"email"`
+		DisplayName  string `json:"display_name"`
+		Password     string `json:"password"`
+		DeviceName   string `json:"device_name"`
+		Platform     string `json:"platform"`
+		Fingerprint  string `json:"fingerprint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		return
+	}
+
+	if req.InvitationID == "" || req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invitation_id, email, and password are required")
+		return
+	}
+
+	pair, err := h.svc.Register(r.Context(), SessionRegisterParams{
+		InvitationID: req.InvitationID,
+		Email:        req.Email,
+		DisplayName:  req.DisplayName,
+		Password:     req.Password,
+		DeviceName:   req.DeviceName,
+		Platform:     req.Platform,
+		Fingerprint:  req.Fingerprint,
+		UserAgent:    r.UserAgent(),
+		IPAddress:    remoteIP(r),
+	})
+	if err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+
+	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"access_token": pair.AccessToken,
+	})
 }
 
 // Login handles POST /api/haven/auth/login.
@@ -130,6 +166,26 @@ func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RevokeUserSessions handles DELETE /api/haven/admin/users/{id}/sessions — owner only.
+func (h *Handler) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		return
+	}
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		return
+	}
+
+	targetID := chi.URLParam(r, "id")
+	if err := h.svc.LogoutAll(r.Context(), targetID); err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
@@ -176,6 +232,12 @@ func errorCode(err error) string {
 		return "TOKEN_REVOKED"
 	case pkgerrors.Is(err, pkgerrors.ErrTokenExpired):
 		return "TOKEN_EXPIRED"
+	case pkgerrors.Is(err, pkgerrors.ErrTokenInvalid):
+		return "INVALID_INVITATION"
+	case pkgerrors.Is(err, pkgerrors.ErrEmailTaken):
+		return "EMAIL_TAKEN"
+	case pkgerrors.Is(err, pkgerrors.ErrPasswordTooShort):
+		return "PASSWORD_TOO_SHORT"
 	default:
 		return "ERROR"
 	}

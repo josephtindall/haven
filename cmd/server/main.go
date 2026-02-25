@@ -21,6 +21,7 @@ import (
 	"github.com/josephtindall/haven/internal/audit"
 	auditpg "github.com/josephtindall/haven/internal/audit/postgres"
 	"github.com/josephtindall/haven/internal/authz"
+	authzpg "github.com/josephtindall/haven/internal/authz/postgres"
 	"github.com/josephtindall/haven/internal/bootstrap"
 	bootstrappg "github.com/josephtindall/haven/internal/bootstrap/postgres"
 	"github.com/josephtindall/haven/internal/device"
@@ -91,14 +92,14 @@ func run() error {
 	prefRepo := prefpg.New(db)
 	invitationRepo := invitationpg.New(db)
 	bootstrapRepo := bootstrappg.New(db)
-	// authzRepo — TODO: implement authz/postgres once needed
+	authzRepo := authzpg.New(db)
 
 	// ── 6. Services ───────────────────────────────────────────────────────────
 	auditSvc := audit.NewAsyncService(auditRepo)
 	defer auditSvc.Stop()
 
-	userSvc := user.NewService(userRepo)
-	deviceSvc := device.NewService(deviceRepo)
+	userSvc := user.NewService(userRepo, auditSvc)
+	deviceSvc := device.NewService(deviceRepo, auditSvc)
 	prefSvc := preferences.NewService(prefRepo)
 	invitationSvc := invitation.NewService(invitationRepo)
 	bootstrapSvc := bootstrap.NewService(bootstrapRepo)
@@ -108,13 +109,11 @@ func run() error {
 		deviceRepo,
 		sessionRepo,
 		auditSvc,
+		invitationRepo,
 		cfg.JWTSigningKey,
 	)
 
-	// TODO: construct authz.DefaultAuthorizer once authz/postgres is implemented
-	var authzAuthorizer authz.Authorizer
-
-	_ = deviceSvc // used indirectly via deviceRepo inside sessionSvc
+	authzAuthorizer := authz.NewDefaultAuthorizer(authzRepo, rdb)
 
 	// ── 7. Bootstrap initialisation ───────────────────────────────────────────
 	// Ensures the instance row exists. Prints the setup token to stdout when
@@ -127,11 +126,11 @@ func run() error {
 	bootstrapGate := bootstrap.NewBootstrapGate(bootstrapRepo)
 	bootstrapHandler := bootstrap.NewHandler(bootstrapSvc, sessionSvc)
 	sessionHandler := session.NewHandler(sessionSvc, true /* secureCookie */)
-	userHandler := user.NewHandler(userSvc)
-	deviceHandler := device.NewHandler(deviceSvc)
+	userHandler := user.NewHandler(userSvc, sessionSvc)
+	deviceHandler := device.NewHandler(deviceSvc, sessionSvc)
 	prefHandler := preferences.NewHandler(prefSvc)
 	invHandler := invitation.NewHandler(invitationSvc)
-	authzHandler := authz.NewHandler(authzAuthorizer)
+	authzHandler := authz.NewHandler(authzAuthorizer, auditSvc)
 
 	// ── 9. Router ─────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -140,6 +139,15 @@ func run() error {
 	r.Use(pkgmiddleware.RequestID)
 	r.Use(pkgmiddleware.Logger)
 	r.Use(bootstrapGate.Middleware) // enforced on every request
+
+	// ── Health (always reachable, all bootstrap states) ───────────────────────
+	r.Get("/api/haven/health", func(w http.ResponseWriter, r *http.Request) {
+		state, _ := bootstrapRepo.Get(r.Context())
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "ok",
+			"state":  string(state.SetupState),
+		})
+	})
 
 	// ── Setup wizard (unauthenticated) ────────────────────────────────────────
 	r.Post("/api/setup/verify-token", bootstrapHandler.VerifyToken)
@@ -151,8 +159,8 @@ func run() error {
 		r.Use(pkgmiddleware.IPRateLimit(rdb))
 		r.Post("/api/haven/auth/login", sessionHandler.Login)
 		r.Post("/api/haven/auth/refresh", sessionHandler.Refresh)
+		r.Post("/api/haven/auth/register", sessionHandler.Register)
 	})
-	r.Post("/api/haven/auth/register", sessionHandler.Register)
 
 	// ── Protected routes (Bearer token required) ──────────────────────────────
 	authMiddleware := pkgmiddleware.RequireAuth(cfg.JWTSigningKey, cfg.JWTSigningKeyPrev)
@@ -186,10 +194,7 @@ func run() error {
 
 		r.Post("/api/haven/admin/users/{id}/lock", userHandler.LockUser)
 		r.Delete("/api/haven/admin/users/{id}/lock", userHandler.UnlockUser)
-		r.Delete("/api/haven/admin/users/{id}/sessions", func(w http.ResponseWriter, r *http.Request) {
-			// TODO: owner-only; revoke all sessions for the target user
-			w.WriteHeader(http.StatusNotImplemented)
-		})
+		r.Delete("/api/haven/admin/users/{id}/sessions", sessionHandler.RevokeUserSessions)
 	})
 
 	// ── 10. Start server + graceful shutdown ──────────────────────────────────
@@ -254,4 +259,10 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(rows)
 	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }

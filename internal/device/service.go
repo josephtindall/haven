@@ -4,17 +4,19 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/josephtindall/haven/internal/audit"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
 )
 
 // Service contains business logic for device management.
 type Service struct {
-	repo Repository
+	repo  Repository
+	audit audit.Service
 }
 
 // NewService constructs a device Service.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, auditSvc audit.Service) *Service {
+	return &Service{repo: repo, audit: auditSvc}
 }
 
 // RegisterOrGet returns an existing device matching the fingerprint, or
@@ -50,8 +52,8 @@ func (s *Service) ListForUser(ctx context.Context, userID string) ([]*Device, er
 	return devices, nil
 }
 
-// Revoke revokes a device. The caller must also revoke all sessions for this
-// device via session.Service.RevokeAllForDevice.
+// Revoke revokes a device. requesterID identifies who performed the revocation.
+// The caller must also revoke all sessions for this device via session.Service.RevokeAllForDevice.
 func (s *Service) Revoke(ctx context.Context, deviceID, callerUserID string) error {
 	d, err := s.repo.GetByID(ctx, deviceID)
 	if err != nil {
@@ -64,5 +66,12 @@ func (s *Service) Revoke(ctx context.Context, deviceID, callerUserID string) err
 	if err := s.repo.Revoke(ctx, deviceID); err != nil {
 		return fmt.Errorf("device.Service.Revoke: %w", err)
 	}
+	s.audit.WriteAsync(ctx, audit.Event{
+		DeviceID: deviceID,
+		Event:    audit.EventDeviceRevoked,
+		Metadata: map[string]any{
+			"revoked_by": callerUserID,
+		},
+	})
 	return nil
 }

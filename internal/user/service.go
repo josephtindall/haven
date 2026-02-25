@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/josephtindall/haven/internal/audit"
 	"github.com/josephtindall/haven/pkg/crypto"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
 )
@@ -17,12 +18,13 @@ const (
 // Service contains all business logic for user management.
 // It depends on the Repository interface — never on a concrete type.
 type Service struct {
-	repo Repository
+	repo  Repository
+	audit audit.Service
 }
 
-// NewService constructs a Service with the given repository.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+// NewService constructs a Service with the given repository and audit service.
+func NewService(repo Repository, auditSvc audit.Service) *Service {
+	return &Service{repo: repo, audit: auditSvc}
 }
 
 // GetByID returns the public projection of a user.
@@ -34,18 +36,27 @@ func (s *Service) GetByID(ctx context.Context, id string) (*PublicUser, error) {
 	return u.ToPublic(), nil
 }
 
-// UpdateProfile applies validated profile changes. Writes a profile_updated
-// audit event — callers are responsible for passing an audit writer.
+// UpdateProfile applies validated profile changes.
 func (s *Service) UpdateProfile(ctx context.Context, id string, params UpdateProfileParams) error {
+	var changed []string
 	if params.DisplayName != "" {
 		params.DisplayName = strings.TrimSpace(params.DisplayName)
+		changed = append(changed, "display_name")
 	}
 	if params.Email != "" {
 		params.Email = strings.ToLower(strings.TrimSpace(params.Email))
+		changed = append(changed, "email")
 	}
 	if err := s.repo.UpdateProfile(ctx, id, params); err != nil {
 		return fmt.Errorf("user.Service.UpdateProfile: %w", err)
 	}
+	s.audit.WriteAsync(ctx, audit.Event{
+		UserID: id,
+		Event:  audit.EventProfileUpdated,
+		Metadata: map[string]any{
+			"fields_changed": changed,
+		},
+	})
 	return nil
 }
 
@@ -78,6 +89,14 @@ func (s *Service) ChangePassword(ctx context.Context, id string, params ChangePa
 	if err := s.repo.UpdatePassword(ctx, id, hash); err != nil {
 		return fmt.Errorf("user.Service.ChangePassword update: %w", err)
 	}
+
+	s.audit.WriteAsync(ctx, audit.Event{
+		UserID: id,
+		Event:  audit.EventPasswordChanged,
+		Metadata: map[string]any{
+			"sessions_invalidated": false,
+		},
+	})
 	return nil
 }
 
@@ -97,10 +116,35 @@ func (s *Service) RecordFailedLogin(ctx context.Context, id string) error {
 	return nil
 }
 
+// LockAccount manually locks a user account — owner-only operation.
+// requesterID identifies who performed the lock (for audit purposes).
+func (s *Service) LockAccount(ctx context.Context, id, requesterID string) error {
+	if err := s.repo.LockAccount(ctx, id, "admin_lock"); err != nil {
+		return fmt.Errorf("user.Service.LockAccount: %w", err)
+	}
+	s.audit.WriteAsync(ctx, audit.Event{
+		UserID: id,
+		Event:  audit.EventAccountLocked,
+		Metadata: map[string]any{
+			"locked_by": requesterID,
+			"reason":    "admin_lock",
+		},
+	})
+	return nil
+}
+
 // UnlockAccount clears the lock on a user — owner-only operation.
-func (s *Service) UnlockAccount(ctx context.Context, id string) error {
+// requesterID identifies who performed the unlock (for audit purposes).
+func (s *Service) UnlockAccount(ctx context.Context, id, requesterID string) error {
 	if err := s.repo.UnlockAccount(ctx, id); err != nil {
 		return fmt.Errorf("user.Service.UnlockAccount: %w", err)
 	}
+	s.audit.WriteAsync(ctx, audit.Event{
+		UserID: id,
+		Event:  audit.EventAccountUnlocked,
+		Metadata: map[string]any{
+			"unlocked_by": requesterID,
+		},
+	})
 	return nil
 }

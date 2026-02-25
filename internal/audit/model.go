@@ -40,4 +40,5 @@ const (
 	EventAccountUnlocked   = "account_unlocked"
 	EventProfileUpdated    = "profile_updated"
 	EventAuthzDenied       = "authz_denied"
+	EventUserRegistered    = "user_registered"
 )

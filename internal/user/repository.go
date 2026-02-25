@@ -34,4 +34,9 @@ type Repository interface {
 
 	// UnlockAccount clears locked_at, locked_reason, and failed_login_attempts.
 	UnlockAccount(ctx context.Context, id string) error
+
+	// RegisterAtomic creates a new user, their preferences row, and marks the
+	// invitation as accepted — all inside a single transaction.
+	// Returns the new user's UUID.
+	RegisterAtomic(ctx context.Context, params RegisterParams) (string, error)
 }

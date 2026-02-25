@@ -3,16 +3,20 @@ package authz
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/josephtindall/haven/internal/audit"
+	pkgmiddleware "github.com/josephtindall/haven/pkg/middleware"
 )
 
 // Handler serves POST /api/haven/authz/check.
 type Handler struct {
 	authz Authorizer
+	audit audit.Service
 }
 
 // NewHandler constructs the authz handler.
-func NewHandler(authz Authorizer) *Handler {
-	return &Handler{authz: authz}
+func NewHandler(authz Authorizer, auditSvc audit.Service) *Handler {
+	return &Handler{authz: authz, audit: auditSvc}
 }
 
 // Check handles POST /api/haven/authz/check.
@@ -38,6 +42,26 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 			"message": "permission check failed",
 		})
 		return
+	}
+
+	if !result.Allowed {
+		claims := pkgmiddleware.ClaimsFromContext(r.Context())
+		deviceID := ""
+		userID := ""
+		if claims != nil {
+			userID = claims.Subject
+			deviceID = claims.DeviceID
+		}
+		h.audit.WriteAsync(r.Context(), audit.Event{
+			UserID:   userID,
+			DeviceID: deviceID,
+			Event:    audit.EventAuthzDenied,
+			Metadata: map[string]any{
+				"action":        req.Action,
+				"resource_type": req.ResourceType,
+				"resource_id":   req.ResourceID,
+			},
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

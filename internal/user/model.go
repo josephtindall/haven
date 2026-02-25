@@ -57,3 +57,11 @@ type ChangePasswordParams struct {
 	CurrentPassword string
 	NewPassword     string
 }
+
+// RegisterParams holds the validated inputs for invitation-gated registration.
+type RegisterParams struct {
+	Email        string
+	DisplayName  string
+	PasswordHash string
+	InvitationID string
+}

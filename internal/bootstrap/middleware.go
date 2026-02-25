@@ -63,11 +63,11 @@ func (g *BootstrapGate) Middleware(next http.Handler) http.Handler {
 }
 
 func isAllowedInUnclaimed(path string) bool {
-	return path == "/" || path == "/api/setup/verify-token"
+	return path == "/" || path == "/api/setup/verify-token" || path == "/api/haven/health"
 }
 
 func isAllowedInSetup(path string) bool {
-	return path == "/" || isSetupPath(path)
+	return path == "/" || path == "/api/haven/health" || isSetupPath(path)
 }
 
 func isSetupPath(path string) bool {

@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -9,14 +10,21 @@ import (
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
+// SessionTerminator is a narrow interface satisfied by session.Service.
+// Defined here to avoid an import cycle (session imports user).
+type SessionTerminator interface {
+	LogoutAll(ctx context.Context, userID string) error
+}
+
 // Handler serves all user-related HTTP endpoints.
 type Handler struct {
-	svc *Service
+	svc      *Service
+	sessions SessionTerminator
 }
 
 // NewHandler constructs the user handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, sessions SessionTerminator) *Handler {
+	return &Handler{svc: svc, sessions: sessions}
 }
 
 // GetUser handles GET /api/haven/users/{id}.
@@ -83,22 +91,45 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
 		return
 	}
-	// TODO: call session.Service.RevokeAllForUser after password change
+
+	// Revoke all sessions so the old password can't be used to refresh tokens.
+	_ = h.sessions.LogoutAll(r.Context(), claims.Subject)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // LockUser handles POST /api/haven/admin/users/{id}/lock — owner only.
 func (h *Handler) LockUser(w http.ResponseWriter, r *http.Request) {
-	// TODO: verify caller is instance-owner role
-	// TODO: call svc.LockAccount
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "owner role required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if err := h.svc.LockAccount(r.Context(), id, claims.Subject); err != nil {
+		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		return
+	}
+	// Revoke all sessions for the locked user immediately.
+	_ = h.sessions.LogoutAll(r.Context(), id)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // UnlockUser handles DELETE /api/haven/admin/users/{id}/lock — owner only.
 func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id := chi.URLParam(r, "id")
-	// TODO: verify caller is instance-owner role
-	if err := h.svc.UnlockAccount(r.Context(), id); err != nil {
+	if err := h.svc.UnlockAccount(r.Context(), id, claims.Subject); err != nil {
 		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
 		return
 	}

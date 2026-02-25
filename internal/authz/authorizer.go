@@ -2,7 +2,12 @@ package authz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Resource identifies the target of a permission check.
@@ -63,12 +68,13 @@ type ResourcePermission struct {
 
 // DefaultAuthorizer implements the four-dimension evaluation algorithm.
 type DefaultAuthorizer struct {
-	repo Repository
+	repo  Repository
+	cache *redis.Client
 }
 
-// NewAuthorizer constructs the default authorizer.
-func NewAuthorizer(repo Repository) *DefaultAuthorizer {
-	return &DefaultAuthorizer{repo: repo}
+// NewDefaultAuthorizer constructs the default authorizer with optional Redis caching.
+func NewDefaultAuthorizer(repo Repository, cache *redis.Client) *DefaultAuthorizer {
+	return &DefaultAuthorizer{repo: repo, cache: cache}
 }
 
 // Check evaluates all four permission dimensions in strict order.
@@ -82,6 +88,19 @@ func NewAuthorizer(repo Repository) *DefaultAuthorizer {
 //  5. Instance role policies
 //  6. Default → DENY
 func (a *DefaultAuthorizer) Check(ctx context.Context, req CheckRequest) (CheckResult, error) {
+	cacheKey := fmt.Sprintf("authz:%s:%s:%s:%s:%s",
+		req.UserID, req.VaultID, req.ResourceType, req.ResourceID, req.Action)
+
+	// Try cache first.
+	if a.cache != nil {
+		if val, err := a.cache.Get(ctx, cacheKey).Result(); err == nil {
+			var cached CheckResult
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				return cached, nil
+			}
+		}
+	}
+
 	// 1. Feature flag.
 	featureKey := domainOf(req.Action)
 	enabled, err := a.repo.IsFeatureEnabled(ctx, featureKey)
@@ -89,7 +108,7 @@ func (a *DefaultAuthorizer) Check(ctx context.Context, req CheckRequest) (CheckR
 		return CheckResult{}, fmt.Errorf("authz: feature flag: %w", err)
 	}
 	if !enabled {
-		return CheckResult{Allowed: false, Reason: "feature_disabled"}, nil
+		return a.cacheAndReturn(ctx, cacheKey, CheckResult{Allowed: false, Reason: "feature_disabled"})
 	}
 
 	// 2 & 3. Resource-level explicit permission.
@@ -99,10 +118,10 @@ func (a *DefaultAuthorizer) Check(ctx context.Context, req CheckRequest) (CheckR
 	}
 	if rp != nil {
 		if rp.Effect == "deny" && containsAction(rp.Actions, req.Action) {
-			return CheckResult{Allowed: false, Reason: "resource_explicit_deny"}, nil
+			return a.cacheAndReturn(ctx, cacheKey, CheckResult{Allowed: false, Reason: "resource_explicit_deny"})
 		}
 		if rp.Effect == "allow" && containsAction(rp.Actions, req.Action) {
-			return CheckResult{Allowed: true}, nil
+			return a.cacheAndReturn(ctx, cacheKey, CheckResult{Allowed: true})
 		}
 	}
 
@@ -112,7 +131,7 @@ func (a *DefaultAuthorizer) Check(ctx context.Context, req CheckRequest) (CheckR
 		return CheckResult{}, fmt.Errorf("authz: vault role: %w", err)
 	}
 	if result, ok := evaluatePolicies(vaultPolicies, req.Action, "vault_role"); ok {
-		return result, nil
+		return a.cacheAndReturn(ctx, cacheKey, result)
 	}
 
 	// 5. Instance role.
@@ -121,11 +140,23 @@ func (a *DefaultAuthorizer) Check(ctx context.Context, req CheckRequest) (CheckR
 		return CheckResult{}, fmt.Errorf("authz: instance role: %w", err)
 	}
 	if result, ok := evaluatePolicies(instancePolicies, req.Action, "instance_role"); ok {
-		return result, nil
+		return a.cacheAndReturn(ctx, cacheKey, result)
 	}
 
 	// 6. Default deny.
-	return CheckResult{Allowed: false, Reason: "default_deny"}, nil
+	return a.cacheAndReturn(ctx, cacheKey, CheckResult{Allowed: false, Reason: "default_deny"})
+}
+
+// cacheAndReturn stores the result in Redis (best-effort) and returns it.
+func (a *DefaultAuthorizer) cacheAndReturn(ctx context.Context, key string, result CheckResult) (CheckResult, error) {
+	if a.cache != nil {
+		if b, err := json.Marshal(result); err == nil {
+			if err := a.cache.Set(ctx, key, b, 5*time.Minute).Err(); err != nil {
+				slog.Warn("authz: cache write failed", "key", key, "err", err)
+			}
+		}
+	}
+	return result, nil
 }
 
 // evaluatePolicies scans a list of policy statements for the action.

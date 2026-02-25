@@ -3,10 +3,15 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+
+	"github.com/josephtindall/haven/pkg/config"
 )
 
 func main() {
@@ -31,12 +36,10 @@ func run(args []string) error {
 		return generateSecrets()
 
 	case "validate-config":
-		// TODO: --env-file flag, load config, print OK or errors
-		return fmt.Errorf("validate-config: not implemented")
+		return validateConfig(args[1:])
 
 	case "healthcheck":
-		// TODO: call GET /health, exit 0 on 200, exit 1 otherwise
-		return fmt.Errorf("healthcheck: not implemented")
+		return healthcheck(args[1:])
 
 	case "factory-reset":
 		// TODO: require --confirm-destroy-all-data flag
@@ -47,6 +50,85 @@ func run(args []string) error {
 		printUsage()
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+func validateConfig(args []string) error {
+	// Parse --env-file flag.
+	var envFile string
+	for i, a := range args {
+		if a == "--env-file" && i+1 < len(args) {
+			envFile = args[i+1]
+		}
+	}
+
+	if envFile != "" {
+		if err := loadEnvFile(envFile); err != nil {
+			return fmt.Errorf("validate-config: %w", err)
+		}
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("validate-config: %w", err)
+	}
+
+	fmt.Println("Configuration OK")
+	fmt.Printf("  Port:      %s\n", cfg.Port)
+	fmt.Printf("  DB host:   %s:%s/%s\n", cfg.DBHost, cfg.DBPort, cfg.DBName)
+	fmt.Printf("  Redis:     %s\n", cfg.RedisAddr)
+	fmt.Printf("  JWT key:   %d bytes\n", len(cfg.JWTSigningKey))
+	return nil
+}
+
+// loadEnvFile reads a .env file and sets each key=value pair into the environment.
+// Lines starting with '#' and blank lines are ignored.
+func loadEnvFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open env file: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		key := line[:idx]
+		val := line[idx+1:]
+		if err := os.Setenv(key, val); err != nil {
+			return fmt.Errorf("setenv %s: %w", key, err)
+		}
+	}
+	return scanner.Err()
+}
+
+func healthcheck(args []string) error {
+	addr := "http://127.0.0.1:8080"
+	for i, a := range args {
+		if a == "--addr" && i+1 < len(args) {
+			addr = args[i+1]
+		}
+	}
+
+	resp, err := http.Get(addr + "/api/haven/health") //nolint:gosec
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "healthcheck: request failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck: unexpected status %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
+	fmt.Println("healthy")
+	return nil
 }
 
 func generateSecrets() error {
@@ -81,7 +163,7 @@ Commands:
   setup [--unattended]              Full unattended install (reads HAVEN_OWNER_* env vars)
   generate-secrets                  Print all required secrets as .env lines
   validate-config [--env-file FILE] Validate configuration before starting
-  healthcheck                       Exit 0 if server is healthy
+  healthcheck [--addr URL]          Exit 0 if server is healthy (default: http://127.0.0.1:8080)
   factory-reset --confirm-destroy-all-data
                                     Wipe all data and reset to UNCLAIMED state`)
 }

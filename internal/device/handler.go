@@ -1,6 +1,7 @@
 package device
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -9,14 +10,21 @@ import (
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
+// SessionRevoker is a narrow interface satisfied by session.Service.
+// Defined here to avoid an import cycle (session imports device).
+type SessionRevoker interface {
+	Logout(ctx context.Context, userID, deviceID string) error
+}
+
 // Handler serves device management endpoints.
 type Handler struct {
-	svc *Service
+	svc      *Service
+	sessions SessionRevoker
 }
 
 // NewHandler constructs the device handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, sessions SessionRevoker) *Handler {
+	return &Handler{svc: svc, sessions: sessions}
 }
 
 // List handles GET /api/haven/devices.
@@ -48,8 +56,10 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
 		return
 	}
-	// TODO: call session.Service.RevokeAllForDevice(deviceID)
-	// TODO: write device_revoked audit event
+
+	// Revoke all active sessions for this device immediately.
+	_ = h.sessions.Logout(r.Context(), claims.Subject, deviceID)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -3,9 +3,11 @@ package session
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/josephtindall/haven/internal/audit"
 	"github.com/josephtindall/haven/internal/device"
+	"github.com/josephtindall/haven/internal/invitation"
 	"github.com/josephtindall/haven/internal/user"
 	"github.com/josephtindall/haven/pkg/crypto"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
@@ -29,14 +31,28 @@ type IssueForUserParams struct {
 	IPAddress   string
 }
 
+// SessionRegisterParams holds the validated inputs for an invitation-gated registration.
+type SessionRegisterParams struct {
+	InvitationID string
+	Email        string
+	DisplayName  string
+	Password     string
+	DeviceName   string
+	Platform     string
+	Fingerprint  string
+	UserAgent    string
+	IPAddress    string
+}
+
 // Service handles login, logout, and token refresh. It orchestrates the user,
 // device, session, and audit packages — all wired in cmd/server/main.go.
 type Service struct {
-	users   user.Repository
-	devices device.Repository
-	tokens  Repository
-	audit   audit.Service
-	jwtKey  []byte
+	users       user.Repository
+	devices     device.Repository
+	tokens      Repository
+	audit       audit.Service
+	invitations invitation.Repository
+	jwtKey      []byte
 }
 
 // NewService constructs the session service.
@@ -45,14 +61,16 @@ func NewService(
 	devices device.Repository,
 	tokens Repository,
 	audit audit.Service,
+	invitations invitation.Repository,
 	jwtKey []byte,
 ) *Service {
 	return &Service{
-		users:   users,
-		devices: devices,
-		tokens:  tokens,
-		audit:   audit,
-		jwtKey:  jwtKey,
+		users:       users,
+		devices:     devices,
+		tokens:      tokens,
+		audit:       audit,
+		invitations: invitations,
+		jwtKey:      jwtKey,
 	}
 }
 
@@ -129,6 +147,56 @@ func (s *Service) Login(ctx context.Context, params LoginParams) (*TokenPair, er
 		IPAddress: params.IPAddress,
 		UserAgent: params.UserAgent,
 		Metadata:  map[string]any{"device_name": dev.Name},
+	})
+
+	return pair, nil
+}
+
+// Register creates a new user via an invitation token and issues a token pair.
+func (s *Service) Register(ctx context.Context, params SessionRegisterParams) (*TokenPair, error) {
+	// Validate invitation.
+	inv, err := s.invitations.GetByID(ctx, params.InvitationID)
+	if err != nil || inv == nil || !inv.IsValid() {
+		return nil, pkgerrors.ErrTokenInvalid
+	}
+
+	if len(params.Password) < 12 {
+		return nil, pkgerrors.ErrPasswordTooShort
+	}
+
+	hash, err := crypto.HashPassword(params.Password)
+	if err != nil {
+		return nil, fmt.Errorf("session.Service.Register hash: %w", err)
+	}
+
+	userID, err := s.users.RegisterAtomic(ctx, user.RegisterParams{
+		Email:        params.Email,
+		DisplayName:  params.DisplayName,
+		PasswordHash: hash,
+		InvitationID: params.InvitationID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("session.Service.Register create user: %w", err)
+	}
+
+	pair, err := s.IssueForUser(ctx, IssueForUserParams{
+		UserID:      userID,
+		DeviceName:  params.DeviceName,
+		Platform:    params.Platform,
+		Fingerprint: params.Fingerprint,
+		UserAgent:   params.UserAgent,
+		IPAddress:   params.IPAddress,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("session.Service.Register issue tokens: %w", err)
+	}
+
+	s.audit.WriteAsync(ctx, audit.Event{
+		UserID: userID,
+		Event:  audit.EventUserRegistered,
+		Metadata: map[string]any{
+			"invitation_id": params.InvitationID,
+		},
 	})
 
 	return pair, nil
@@ -312,6 +380,9 @@ func recordFailedLogin(ctx context.Context, users user.Repository, auditSvc audi
 		Metadata:  map[string]any{"reason": "wrong_password", "failed_attempts": count},
 	})
 	if count >= 10 {
+		if err := users.LockAccount(ctx, u.ID, "brute_force"); err != nil {
+			slog.Warn("failed to lock account", "user_id", u.ID, "err", err)
+		}
 		auditSvc.WriteAsync(ctx, audit.Event{
 			UserID:   u.ID,
 			Event:    audit.EventAccountLocked,
