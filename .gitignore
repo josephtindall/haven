@@ -12,3 +12,4 @@
 !go.sum
 !*.example
 !Dockerfile
+!.github/
