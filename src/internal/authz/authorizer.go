@@ -62,7 +62,7 @@ type PolicyStatement struct {
 
 // ResourcePermission is an explicit allow/deny for a specific user+resource.
 type ResourcePermission struct {
-	Effect  string   // "allow" | "deny"
+	Effect  string // "allow" | "deny"
 	Actions []string
 }
 

@@ -14,8 +14,8 @@ func TestAudit_Insert_And_ListForUser(t *testing.T) {
 	events := []string{audit.EventLoginSuccess, audit.EventTokenRefreshed, audit.EventLogout}
 	for _, ev := range events {
 		if err := repo.Insert(bg(), audit.Event{
-			UserID:  userID,
-			Event:   ev,
+			UserID:   userID,
+			Event:    ev,
 			Metadata: map[string]any{"test": true},
 		}); err != nil {
 			t.Fatalf("Insert(%q): %v", ev, err)

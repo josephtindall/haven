@@ -17,8 +17,8 @@ type Service interface {
 // AsyncService is the production implementation. It runs a background worker
 // that drains a buffered channel and writes to the repository.
 type AsyncService struct {
-	repo   Repository
-	queue  chan Event
+	repo  Repository
+	queue chan Event
 }
 
 const queueSize = 1024

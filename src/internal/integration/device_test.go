@@ -90,9 +90,9 @@ func TestDevice_ListForUser(t *testing.T) {
 	repo := devicepg.New(testDB)
 	userID := insertUser(t, uniqueEmail())
 
-	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D1", Platform: device.PlatformWeb, Fingerprint: randHex(16)})        //nolint:errcheck
-	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D2", Platform: device.PlatformIOS, Fingerprint: randHex(16)})        //nolint:errcheck
-	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D3", Platform: device.PlatformAndroid, Fingerprint: randHex(16)})    //nolint:errcheck
+	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D1", Platform: device.PlatformWeb, Fingerprint: randHex(16)})     //nolint:errcheck
+	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D2", Platform: device.PlatformIOS, Fingerprint: randHex(16)})     //nolint:errcheck
+	repo.Create(bg(), device.RegisterParams{UserID: userID, Name: "D3", Platform: device.PlatformAndroid, Fingerprint: randHex(16)}) //nolint:errcheck
 
 	devices, err := repo.ListForUser(bg(), userID)
 	if err != nil {
