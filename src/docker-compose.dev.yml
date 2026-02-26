@@ -2,6 +2,8 @@
 # Haven uses live reload via Air (https://github.com/air-verse/air).
 # Air is pulled at image build time; no local Go install required.
 
+name: haven
+
 services:
   postgres:
     image: postgres:16-alpine

@@ -141,7 +141,8 @@ curl -s -X POST http://localhost:8080/api/setup/owner \
     "display_name": "Alice Owner",
     "password": "supersecret123",
     "device_name": "Alice MacBook",
-    "platform": "web"
+    "platform": "web",
+    "confirmed": true
   }' | jq .
 ```
 
@@ -262,6 +263,7 @@ INVITE_ID=$(echo "$INVITE" | jq -r .id)
 BOB_TOKEN=$(curl -s -X POST http://localhost:8080/api/haven/auth/register \
   -H "Content-Type: application/json" \
   -d "{
+    \"invitation_id\": \"$INVITE_ID\",
     \"invitation_token\": \"$INVITE_TOKEN\",
     \"email\": \"bob@example.com\",
     \"display_name\": \"Bob Member\",
