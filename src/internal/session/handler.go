@@ -159,10 +159,19 @@ func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
+
+	u, err := h.svc.GetUser(r.Context(), claims.Subject)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "could not load user")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
-		"user_id":       claims.Subject,
+		"user_id":       u.ID,
+		"email":         u.Email,
+		"display_name":  u.DisplayName,
+		"instance_role": u.InstanceRoleID,
 		"device_id":     claims.DeviceID,
-		"instance_role": claims.Role,
 	})
 }
 

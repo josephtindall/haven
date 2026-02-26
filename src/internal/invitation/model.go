@@ -15,16 +15,16 @@ const (
 // Invitation is a pending invite link. The raw token is sent to the invitee
 // and never stored — only the SHA-256 hash is persisted.
 type Invitation struct {
-	ID          string
-	InviterID   string
-	Email       string // optional — may be blank for QR-only invites
-	Note        string
-	TokenHash   string // SHA-256(raw), hex — used for lookups
-	Status      Status
-	ExpiresAt   time.Time
-	AcceptedAt  *time.Time
-	RevokedAt   *time.Time
-	CreatedAt   time.Time
+	ID         string
+	InviterID  string
+	Email      string // optional — may be blank for QR-only invites
+	Note       string
+	TokenHash  string // SHA-256(raw), hex — used for lookups
+	Status     Status
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+	RevokedAt  *time.Time
+	CreatedAt  time.Time
 }
 
 // IsValid returns true if the invitation can still be accepted.

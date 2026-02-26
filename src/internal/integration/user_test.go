@@ -177,8 +177,8 @@ func TestUser_UnlockAccount(t *testing.T) {
 	repo := userpg.New(testDB)
 	id := insertUser(t, uniqueEmail())
 
-	repo.LockAccount(bg(), id, "brute_force")      //nolint:errcheck
-	repo.IncrementFailedLogins(bg(), id)            //nolint:errcheck
+	repo.LockAccount(bg(), id, "brute_force") //nolint:errcheck
+	repo.IncrementFailedLogins(bg(), id)      //nolint:errcheck
 
 	if err := repo.UnlockAccount(bg(), id); err != nil {
 		t.Fatalf("UnlockAccount: %v", err)

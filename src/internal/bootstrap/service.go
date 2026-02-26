@@ -8,11 +8,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
 	"github.com/josephtindall/haven/pkg/crypto"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
 )
+
+// bcp47Pattern matches well-formed BCP-47 language tags, e.g. "en", "en-US", "zh-Hans-CN".
+var bcp47Pattern = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{1,8})*$`)
 
 const (
 	setupTokenLifetime = 2 * time.Hour    // UNCLAIMED token validity
@@ -126,9 +130,14 @@ func (s *Service) ConfigureInstance(ctx context.Context, name, locale, timezone 
 	if err := s.checkSetupTimeout(ctx); err != nil {
 		return err
 	}
-	// TODO: validate IANA timezone and BCP-47 locale
 	if len(name) < 2 || len(name) > 64 {
 		return fmt.Errorf("bootstrap: instance name must be 2–64 characters")
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return fmt.Errorf("bootstrap: invalid timezone %q: must be a valid IANA timezone (e.g. \"America/New_York\")", timezone)
+	}
+	if !bcp47Pattern.MatchString(locale) {
+		return fmt.Errorf("bootstrap: invalid locale %q: must be a valid BCP-47 language tag (e.g. \"en-US\")", locale)
 	}
 	return s.repo.ConfigureInstance(ctx, name, locale, timezone)
 }

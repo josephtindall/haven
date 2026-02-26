@@ -90,7 +90,7 @@ func TestSession_Consume_AlreadyConsumed_ReturnsError(t *testing.T) {
 
 	_, hash, _ := token.GenerateRefreshToken()
 	tok := &session.RefreshToken{DeviceID: deviceID, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour)}
-	repo.Create(bg(), tok)   //nolint:errcheck
+	repo.Create(bg(), tok)     //nolint:errcheck
 	repo.Consume(bg(), tok.ID) //nolint:errcheck
 
 	// Second Consume must fail — the token was already consumed.

@@ -11,22 +11,26 @@ import (
 
 // Handler serves invitation endpoints.
 type Handler struct {
-	svc *Service
+	svc     *Service
+	baseURL string // HAVEN_BASE_URL — used to build join links, e.g. https://haven.example.com
 }
 
 // NewHandler constructs the invitation handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, baseURL string) *Handler {
+	return &Handler{svc: svc, baseURL: baseURL}
 }
 
-// Create handles POST /api/haven/invitations.
+// Create handles POST /api/haven/invitations — owner only.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	// TODO: verify caller has invitation:create permission
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "owner role required")
+		return
+	}
 
 	var req struct {
 		Email string `json:"email"`
@@ -48,16 +52,24 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The join URL encodes the raw token — clients show a QR code and copyable link.
-	// TODO: derive base URL from config
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         inv.ID,
-		"join_url":   "/join?token=" + rawToken,
+		"join_url":   h.baseURL + "/api/haven/join?token=" + rawToken,
 		"expires_at": inv.ExpiresAt,
 	})
 }
 
-// List handles GET /api/haven/invitations.
+// List handles GET /api/haven/invitations — owner only.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "owner role required")
+		return
+	}
 	invs, err := h.svc.List(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -66,8 +78,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, invs)
 }
 
-// Revoke handles DELETE /api/haven/invitations/{id}.
+// Revoke handles DELETE /api/haven/invitations/{id} — owner only.
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "owner role required")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if err := h.svc.Revoke(r.Context(), id); err != nil {
 		writeError(w, pkgerrors.HTTPStatus(err), err.Error())

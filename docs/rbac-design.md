@@ -2,7 +2,8 @@
 
 ## Overview
 
-RBAC spans both repos but is owned entirely by Haven. Luma never makes local permission decisions — it calls Haven's authz endpoint. The permission model can evolve in Haven without Luma changing any business logic.
+RBAC spans both repos but is owned entirely by Haven. Luma never makes local permission decisions — it calls Haven's
+authz endpoint. The permission model can evolve in Haven without Luma changing any business logic.
 
 ---
 
@@ -10,13 +11,13 @@ RBAC spans both repos but is owned entirely by Haven. Luma never makes local per
 
 Evaluated in strict order. **Explicit deny at any level always wins and stops evaluation immediately.**
 
-| Priority | Dimension | Owner |
-|----------|-----------|-------|
-| 1 — most specific | Resource-level explicit permission | Haven DB |
-| 2 | Vault role policy | Haven DB |
-| 3 | Instance role policy | Haven DB |
-| 4 — least specific | Feature flag | Haven instance table |
-| — | Default | DENY |
+| Priority           | Dimension                          | Owner                |
+|--------------------|------------------------------------|----------------------|
+| 1 — most specific  | Resource-level explicit permission | Haven DB             |
+| 2                  | Vault role policy                  | Haven DB             |
+| 3                  | Instance role policy               | Haven DB             |
+| 4 — least specific | Feature flag                       | Haven instance table |
+| —                  | Default                            | DENY                 |
 
 ### Evaluation Algorithm
 
@@ -47,24 +48,25 @@ Evaluated in strict order. **Explicit deny at any level always wins and stops ev
 
 ### Instance-Level (Haven)
 
-| Role ID | Name | Key Powers |
-|---------|------|-----------|
-| `builtin:instance-owner` | Owner | All permissions. Cannot be removed without ownership transfer. One per instance. |
-| `builtin:instance-member` | Member | Access Vaults they belong to. Manage own account and sessions only. |
+| Role ID                   | Name   | Key Powers                                                                       |
+|---------------------------|--------|----------------------------------------------------------------------------------|
+| `builtin:instance-owner`  | Owner  | All permissions. Cannot be removed without ownership transfer. One per instance. |
+| `builtin:instance-member` | Member | Access Vaults they belong to. Manage own account and sessions only.              |
 
 ### Vault-Level (Luma)
 
-| Role ID | Name | Key Powers |
-|---------|------|-----------|
-| `builtin:vault-admin` | Vault Admin | All content actions. Manage Vault members and settings. |
-| `builtin:vault-editor` | Editor | Create, edit, delete content. Cannot manage Vault membership. |
-| `builtin:vault-viewer` | Viewer | Read-only. No create, edit, or delete. |
+| Role ID                | Name        | Key Powers                                                    |
+|------------------------|-------------|---------------------------------------------------------------|
+| `builtin:vault-admin`  | Vault Admin | All content actions. Manage Vault members and settings.       |
+| `builtin:vault-editor` | Editor      | Create, edit, delete content. Cannot manage Vault membership. |
+| `builtin:vault-viewer` | Viewer      | Read-only. No create, edit, or delete.                        |
 
 ---
 
 ## Role Inheritance
 
-Custom roles declare a parent and inherit all its permissions. Children can add or explicitly deny inherited permissions. Max depth: 5 levels. Circular inheritance rejected at creation.
+Custom roles declare a parent and inherit all its permissions. Children can add or explicitly deny inherited
+permissions. Max depth: 5 levels. Circular inheritance rejected at creation.
 
 ```json
 {
@@ -81,17 +83,17 @@ Custom roles declare a parent and inherit all its permissions. Children can add 
 
 Every permission check uses one of these canonical strings. No other strings are valid anywhere in either codebase.
 
-| Domain | Actions |
-|--------|---------|
-| `page` | `read`, `create`, `edit`, `delete`, `archive`, `version`, `restore-version`, `share`, `transclude` |
-| `task` | `read`, `create`, `edit`, `delete`, `assign`, `close`, `comment` |
-| `flow` | `read`, `create`, `edit`, `delete`, `publish`, `execute`, `comment` |
-| `vault` | `read`, `create`, `edit`, `delete`, `archive`, `manage-members`, `manage-roles` |
-| `user` | `read`, `invite`, `edit`, `delete`, `lock`, `unlock`, `revoke-sessions` |
-| `audit` | `read-own`, `read-all` |
-| `instance` | `read`, `configure`, `backup`, `restore` |
-| `notification` | `read`, `configure-own`, `configure-all` |
-| `invitation` | `create`, `revoke`, `list` |
+| Domain         | Actions                                                                                            |
+|----------------|----------------------------------------------------------------------------------------------------|
+| `page`         | `read`, `create`, `edit`, `delete`, `archive`, `version`, `restore-version`, `share`, `transclude` |
+| `task`         | `read`, `create`, `edit`, `delete`, `assign`, `close`, `comment`                                   |
+| `flow`         | `read`, `create`, `edit`, `delete`, `publish`, `execute`, `comment`                                |
+| `vault`        | `read`, `create`, `edit`, `delete`, `archive`, `manage-members`, `manage-roles`                    |
+| `user`         | `read`, `invite`, `edit`, `delete`, `lock`, `unlock`, `revoke-sessions`                            |
+| `audit`        | `read-own`, `read-all`                                                                             |
+| `instance`     | `read`, `configure`, `backup`, `restore`                                                           |
+| `notification` | `read`, `configure-own`, `configure-all`                                                           |
+| `invitation`   | `create`, `revoke`, `list`                                                                         |
 
 ---
 
@@ -177,13 +179,16 @@ Response: { "allowed": true }
       or: { "allowed": false, "reason": "vault_role_deny" }
 ```
 
-Permission checks cached in Redis with 5-minute TTL. Cache invalidated on any role or vault membership change for that user.
+Permission checks cached in Redis with 5-minute TTL. Cache invalidated on any role or vault membership change for that
+user.
 
 ---
 
 ## Personal Vault Isolation Rule
 
-The Owner instance role does NOT grant read access to another user's Personal Vault. Enforced at the policy data level — `builtin:instance-owner` policies contain no content-read actions scoped to other users' Personal Vaults. This is enforced by data, not convention.
+The Owner instance role does NOT grant read access to another user's Personal Vault. Enforced at the policy data level —
+`builtin:instance-owner` policies contain no content-read actions scoped to other users' Personal Vaults. This is
+enforced by data, not convention.
 
 ---
 

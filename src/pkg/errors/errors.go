@@ -8,20 +8,20 @@ import (
 // Sentinel errors returned by the service layer.
 // Handlers map these to HTTP status codes via HTTPStatus.
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")     // 401
-	ErrAccountLocked      = errors.New("account locked")          // 403
-	ErrTokenExpired       = errors.New("token expired")           // 401
-	ErrTokenInvalid       = errors.New("token invalid")           // 401
-	ErrTokenRevoked       = errors.New("token revoked")           // 401
-	ErrTokenReuseDetected = errors.New("token reuse detected")    // 401 — triggers full revocation
-	ErrUserNotFound       = errors.New("user not found")          // 404
-	ErrEmailTaken         = errors.New("email taken")             // 409
-	ErrPasswordTooShort   = errors.New("password too short")      // 422
-	ErrDeviceNotFound     = errors.New("device not found")        // 404
-	ErrDeviceRevoked      = errors.New("device revoked")          // 403
-	ErrForbidden          = errors.New("forbidden")               // 403
-	ErrSetupRequired      = errors.New("setup required")          // 503
-	ErrSetupComplete      = errors.New("setup complete")          // 410
+	ErrInvalidCredentials = errors.New("invalid credentials")  // 401
+	ErrAccountLocked      = errors.New("account locked")       // 403
+	ErrTokenExpired       = errors.New("token expired")        // 401
+	ErrTokenInvalid       = errors.New("token invalid")        // 401
+	ErrTokenRevoked       = errors.New("token revoked")        // 401
+	ErrTokenReuseDetected = errors.New("token reuse detected") // 401 — triggers full revocation
+	ErrUserNotFound       = errors.New("user not found")       // 404
+	ErrEmailTaken         = errors.New("email taken")          // 409
+	ErrPasswordTooShort   = errors.New("password too short")   // 422
+	ErrDeviceNotFound     = errors.New("device not found")     // 404
+	ErrDeviceRevoked      = errors.New("device revoked")       // 403
+	ErrForbidden          = errors.New("forbidden")            // 403
+	ErrSetupRequired      = errors.New("setup required")       // 503
+	ErrSetupComplete      = errors.New("setup complete")       // 410
 )
 
 // HTTPStatus maps a sentinel error to its canonical HTTP status code.

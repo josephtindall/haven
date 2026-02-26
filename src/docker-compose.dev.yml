@@ -2,6 +2,8 @@
 # Haven uses live reload via Air (https://github.com/air-verse/air).
 # Air is pulled at image build time; no local Go install required.
 
+name: haven
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -50,6 +52,7 @@ services:
       # Dev signing key: 64 zero bytes in hex. NEVER use in production.
       HAVEN_JWT_SIGNING_KEY: ${HAVEN_JWT_SIGNING_KEY:-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}
       HAVEN_PORT: 8080
+      HAVEN_BASE_URL: ${HAVEN_BASE_URL:-http://localhost:8080}
     depends_on:
       postgres:
         condition: service_healthy

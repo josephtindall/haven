@@ -13,8 +13,8 @@ import (
 
 const (
 	// 10 attempts per IP per 15-minute window before HTTP 429.
-	rateLimitWindow   = 15 * time.Minute
-	rateLimitMaxHits  = 10
+	rateLimitWindow  = 15 * time.Minute
+	rateLimitMaxHits = 10
 )
 
 // IPRateLimit enforces per-IP rate limiting using Redis sliding counters.

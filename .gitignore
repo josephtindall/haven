@@ -24,6 +24,7 @@ coverage.out
 # Go workspace (local only)
 go.work
 go.work.sum
+*.exe
 
 # Vendor directory (use Go modules instead)
 vendor/

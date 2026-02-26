@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed IANA timezone database for portability
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -129,7 +130,7 @@ func run() error {
 	userHandler := user.NewHandler(userSvc, sessionSvc)
 	deviceHandler := device.NewHandler(deviceSvc, sessionSvc)
 	prefHandler := preferences.NewHandler(prefSvc)
-	invHandler := invitation.NewHandler(invitationSvc)
+	invHandler := invitation.NewHandler(invitationSvc, cfg.BaseURL)
 	authzHandler := authz.NewHandler(authzAuthorizer, auditSvc)
 
 	// ── 9. Router ─────────────────────────────────────────────────────────────
@@ -162,6 +163,9 @@ func run() error {
 		r.Post("/api/haven/auth/register", sessionHandler.Register)
 	})
 
+	// ── Invitation join (unauthenticated — accessed before account creation) ──
+	r.Get("/api/haven/join", invHandler.Join)
+
 	// ── Protected routes (Bearer token required) ──────────────────────────────
 	authMiddleware := pkgmiddleware.RequireAuth(cfg.JWTSigningKey, cfg.JWTSigningKeyPrev)
 
@@ -190,7 +194,6 @@ func run() error {
 		r.Post("/api/haven/invitations", invHandler.Create)
 		r.Get("/api/haven/invitations", invHandler.List)
 		r.Delete("/api/haven/invitations/{id}", invHandler.Revoke)
-		r.Get("/api/haven/join", invHandler.Join)
 
 		r.Post("/api/haven/admin/users/{id}/lock", userHandler.LockUser)
 		r.Delete("/api/haven/admin/users/{id}/lock", userHandler.UnlockUser)

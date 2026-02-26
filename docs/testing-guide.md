@@ -8,12 +8,12 @@ builds on state created by the one before it.
 
 ## Prerequisites
 
-| Tool | Minimum version |
-|------|----------------|
-| Docker Desktop | 4.x |
-| Go | 1.23 |
-| `curl` | any |
-| PowerShell | 7 (for the PS snippets) or adapt to bash |
+| Tool           | Minimum version                          |
+|----------------|------------------------------------------|
+| Docker Desktop | 4.x                                      |
+| Go             | 1.23                                     |
+| `curl`         | any                                      |
+| PowerShell     | 7 (for the PS snippets) or adapt to bash |
 
 ---
 
@@ -62,11 +62,13 @@ curl -s http://localhost:8080/api/haven/health | jq .
 ```
 
 Expected:
+
 ```json
 { "status": "ok", "state": "unclaimed" }
 ```
 
 CLI healthcheck (DoD item — exit 0):
+
 ```bash
 go run ./cmd/cli healthcheck --addr http://localhost:8080
 echo "exit: $?"
@@ -88,6 +90,7 @@ Expected: `503`
 ### 3b. Retrieve the setup token
 
 The server prints the setup token to stdout on first start:
+
 ```
 [haven] setup token: <TOKEN>
 ```
@@ -105,6 +108,7 @@ curl -s -X POST http://localhost:8080/api/setup/verify-token \
 Expected: `{"state":"setup"}`. The instance is now in **SETUP** state.
 
 Health check now shows `"state": "setup"`:
+
 ```bash
 curl -s http://localhost:8080/api/haven/health | jq .state
 ```
@@ -141,7 +145,8 @@ curl -s -X POST http://localhost:8080/api/setup/owner \
     "display_name": "Alice Owner",
     "password": "supersecret123",
     "device_name": "Alice MacBook",
-    "platform": "web"
+    "platform": "web",
+    "confirmed": true
   }' | jq .
 ```
 
@@ -262,6 +267,7 @@ INVITE_ID=$(echo "$INVITE" | jq -r .id)
 BOB_TOKEN=$(curl -s -X POST http://localhost:8080/api/haven/auth/register \
   -H "Content-Type: application/json" \
   -d "{
+    \"invitation_id\": \"$INVITE_ID\",
     \"invitation_token\": \"$INVITE_TOKEN\",
     \"email\": \"bob@example.com\",
     \"display_name\": \"Bob Member\",
@@ -349,7 +355,8 @@ This test verifies that presenting a consumed refresh token triggers full sessio
 3. Send the **old** refresh token again.
 4. Expected: **401** with `TOKEN_REVOKED` code.
 5. Verify in the server log: `token_reuse_detected` audit event.
-6. Try using the access token from step 2 — it should still work until it expires (15 min), but after that, all sessions for this user are revoked.
+6. Try using the access token from step 2 — it should still work until it expires (15 min), but after that, all sessions
+   for this user are revoked.
 
 ```bash
 # Step 1 — login, capture cookie
@@ -376,6 +383,7 @@ echo "Reuse response: $STATUS"   # expected: 401
 ```
 
 Check server output for:
+
 ```
 audit: token_reuse_detected  user_id=<owner-uuid>
 ```
@@ -434,9 +442,11 @@ curl -s -X DELETE "http://localhost:8080/api/haven/devices/$DEVICE_ID" \
 
 Expected: 204 No Content.
 
-Verify the device no longer appears in the list. Any refresh attempt using the revoked device's token must return 403 (`DEVICE_REVOKED`).
+Verify the device no longer appears in the list. Any refresh attempt using the revoked device's token must return 403 (
+`DEVICE_REVOKED`).
 
-Revocation must propagate within **15 minutes** for long-lived tokens — verify by waiting and retrying the refresh on the revoked device.
+Revocation must propagate within **15 minutes** for long-lived tokens — verify by waiting and retrying the refresh on
+the revoked device.
 
 ### 10c. Admin: revoke all sessions for a user
 
@@ -517,14 +527,15 @@ Expected: all tests pass. The output will show `--- PASS:` for each test.
 Verify that two users can log in from multiple platforms and the device list
 accurately reflects each session.
 
-| User | Platform | Expected device name |
-|------|----------|----------------------|
-| Alice (owner) | Web browser | Populated from `device_name` field |
-| Alice (owner) | iOS (Keychain) | Separate device entry |
-| Bob (member)  | iOS (Keychain) | Separate device entry |
-| Bob (member)  | Android (EncryptedSharedPreferences) | Separate device entry |
+| User          | Platform                             | Expected device name               |
+|---------------|--------------------------------------|------------------------------------|
+| Alice (owner) | Web browser                          | Populated from `device_name` field |
+| Alice (owner) | iOS (Keychain)                       | Separate device entry              |
+| Bob (member)  | iOS (Keychain)                       | Separate device entry              |
+| Bob (member)  | Android (EncryptedSharedPreferences) | Separate device entry              |
 
 For each login, verify:
+
 - `GET /api/haven/devices` shows the correct number of active devices.
 - The refresh token stored on the device works and produces a new access token.
 
@@ -554,13 +565,13 @@ Work through this list after completing all sections above.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Server exits at startup with `fatal: JWT_SIGNING_KEY missing` | `.env` not loaded | `source .env` or set env vars before running |
-| `503` on all routes | Instance still UNCLAIMED | Complete bootstrap steps §3b–3f |
-| `410` on `/api/setup/*` | Instance already ACTIVE | Expected — setup is one-time only |
-| `401 INVALID_CREDENTIALS` on valid login | Password mismatch or wrong email | Double-check credentials; emails are case-sensitive |
-| `403 ACCOUNT_LOCKED` | Brute-force triggered | Unlock via `POST /api/haven/admin/users/{id}/unlock` as owner |
-| `401 TOKEN_REVOKED` on refresh | Token reuse detected or device revoked | Log in fresh |
-| Integration tests fail with `dial error` | PostgreSQL not running | `docker compose -f docker-compose.dev.yml up postgres -d` |
-| `migrate up: ERROR: role "haven_app" does not exist` | DB user grant fails on fresh DB | Safe to ignore — grant is conditional; see migration 0001 |
+| Symptom                                                       | Likely cause                           | Fix                                                           |
+|---------------------------------------------------------------|----------------------------------------|---------------------------------------------------------------|
+| Server exits at startup with `fatal: JWT_SIGNING_KEY missing` | `.env` not loaded                      | `source .env` or set env vars before running                  |
+| `503` on all routes                                           | Instance still UNCLAIMED               | Complete bootstrap steps §3b–3f                               |
+| `410` on `/api/setup/*`                                       | Instance already ACTIVE                | Expected — setup is one-time only                             |
+| `401 INVALID_CREDENTIALS` on valid login                      | Password mismatch or wrong email       | Double-check credentials; emails are case-sensitive           |
+| `403 ACCOUNT_LOCKED`                                          | Brute-force triggered                  | Unlock via `POST /api/haven/admin/users/{id}/unlock` as owner |
+| `401 TOKEN_REVOKED` on refresh                                | Token reuse detected or device revoked | Log in fresh                                                  |
+| Integration tests fail with `dial error`                      | PostgreSQL not running                 | `docker compose -f docker-compose.dev.yml up postgres -d`     |
+| `migrate up: ERROR: role "haven_app" does not exist`          | DB user grant fails on fresh DB        | Safe to ignore — grant is conditional; see migration 0001     |
