@@ -2,9 +2,9 @@ package bootstrap
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/josephtindall/haven/internal/session"
@@ -158,7 +158,6 @@ func errorCode(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
 	switch {
 	case pkgerrors.Is(err, pkgerrors.ErrSetupComplete):
 		return "SETUP_COMPLETE"
@@ -170,7 +169,7 @@ func errorCode(err error) string {
 		return "PASSWORD_TOO_SHORT"
 	case pkgerrors.Is(err, pkgerrors.ErrSetupRequired):
 		return "SETUP_REQUIRED"
-	case strings.Contains(msg, "2–64"):
+	case errors.Is(err, ErrInvalidName):
 		return "INVALID_NAME"
 	default:
 		return "INTERNAL_ERROR"

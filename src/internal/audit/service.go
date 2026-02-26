@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 )
 
 // Service is the interface the rest of the codebase calls to write audit events.
@@ -17,8 +18,9 @@ type Service interface {
 // AsyncService is the production implementation. It runs a background worker
 // that drains a buffered channel and writes to the repository.
 type AsyncService struct {
-	repo  Repository
-	queue chan Event
+	repo    Repository
+	queue   chan Event
+	stopped atomic.Bool
 }
 
 const queueSize = 1024
@@ -34,9 +36,14 @@ func NewAsyncService(repo Repository) *AsyncService {
 	return s
 }
 
-// WriteAsync enqueues an event. If the queue is full, the event is dropped and
-// logged — this is acceptable; availability beats perfect audit completeness.
+// WriteAsync enqueues an event. If the queue is full or the service has been
+// stopped, the event is dropped and logged — availability beats perfect audit
+// completeness.
 func (s *AsyncService) WriteAsync(ctx context.Context, e Event) {
+	if s.stopped.Load() {
+		slog.Warn("audit service stopped — event dropped", "event", e.Event)
+		return
+	}
 	select {
 	case s.queue <- e:
 	default:
@@ -46,6 +53,7 @@ func (s *AsyncService) WriteAsync(ctx context.Context, e Event) {
 
 // Stop drains remaining events and shuts down the worker. Call on server shutdown.
 func (s *AsyncService) Stop() {
+	s.stopped.Store(true)
 	close(s.queue)
 }
 
