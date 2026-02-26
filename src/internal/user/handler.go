@@ -32,7 +32,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	u, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
@@ -42,7 +42,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Email       string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Email:       req.Email,
 	})
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -70,7 +70,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword     string `json:"new_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword:     req.NewPassword,
 	})
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 
@@ -102,17 +102,17 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) LockUser(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "owner role required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 
 	id := chi.URLParam(r, "id")
 	if err := h.svc.LockAccount(r.Context(), id, claims.Subject); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	// Revoke all sessions for the locked user immediately.
@@ -125,12 +125,12 @@ func (h *Handler) LockUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.svc.UnlockAccount(r.Context(), id, claims.Subject); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -142,11 +142,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+func writeError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    http.StatusText(status),
+		Code:    code,
 		Message: msg,
 	})
 }

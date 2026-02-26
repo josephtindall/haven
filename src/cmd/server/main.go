@@ -239,11 +239,11 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := pkgmiddleware.ClaimsFromContext(r.Context())
 		if claims == nil {
-			w.WriteHeader(http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}
 		if all && claims.Role != "builtin:instance-owner" {
-			w.WriteHeader(http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 			return
 		}
 		var (
@@ -256,11 +256,10 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 			rows, err = repo.ListForUser(r.Context(), claims.Subject, 100, 0)
 		}
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load audit log")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(rows)
+		writeJSON(w, http.StatusOK, rows)
 	}
 }
 
@@ -268,4 +267,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, code, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": msg})
 }

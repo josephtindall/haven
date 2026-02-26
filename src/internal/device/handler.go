@@ -31,13 +31,13 @@ func NewHandler(svc *Service, sessions SessionRevoker) *Handler {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	devices, err := h.svc.ListForUser(r.Context(), claims.Subject)
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, devices)
@@ -47,13 +47,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	deviceID := chi.URLParam(r, "id")
 	if err := h.svc.Revoke(r.Context(), deviceID, claims.Subject); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 
@@ -69,11 +69,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+func writeError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    http.StatusText(status),
+		Code:    code,
 		Message: msg,
 	})
 }

@@ -61,6 +61,44 @@ func HTTPStatus(err error) int {
 	}
 }
 
+// ErrorCode maps a sentinel error to a machine-readable screaming snake case
+// code suitable for JSON error responses. Returns "INTERNAL_ERROR" for
+// unrecognised errors.
+func ErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		return "INVALID_CREDENTIALS"
+	case errors.Is(err, ErrAccountLocked):
+		return "ACCOUNT_LOCKED"
+	case errors.Is(err, ErrTokenExpired):
+		return "TOKEN_EXPIRED"
+	case errors.Is(err, ErrTokenInvalid):
+		return "TOKEN_INVALID"
+	case errors.Is(err, ErrTokenRevoked):
+		return "TOKEN_REVOKED"
+	case errors.Is(err, ErrTokenReuseDetected):
+		return "TOKEN_REUSE_DETECTED"
+	case errors.Is(err, ErrUserNotFound):
+		return "USER_NOT_FOUND"
+	case errors.Is(err, ErrEmailTaken):
+		return "EMAIL_TAKEN"
+	case errors.Is(err, ErrPasswordTooShort):
+		return "PASSWORD_TOO_SHORT"
+	case errors.Is(err, ErrDeviceNotFound):
+		return "DEVICE_NOT_FOUND"
+	case errors.Is(err, ErrDeviceRevoked):
+		return "DEVICE_REVOKED"
+	case errors.Is(err, ErrForbidden):
+		return "FORBIDDEN"
+	case errors.Is(err, ErrSetupRequired):
+		return "SETUP_REQUIRED"
+	case errors.Is(err, ErrSetupComplete):
+		return "SETUP_COMPLETE"
+	default:
+		return "INTERNAL_ERROR"
+	}
+}
+
 // ErrorResponse is the JSON envelope for all error responses.
 type ErrorResponse struct {
 	Code    string `json:"code"`

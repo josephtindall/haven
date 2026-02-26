@@ -136,7 +136,7 @@ func (h *Handler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "haven_refresh",
+		Name:     session.RefreshCookieName,
 		Value:    pair.RefreshToken,
 		Path:     "/api/haven/auth/refresh",
 		Expires:  pair.ExpiresAt,

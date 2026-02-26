@@ -24,11 +24,11 @@ func NewHandler(svc *Service, baseURL string) *Handler {
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "owner role required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 
@@ -37,7 +37,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Note  string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
@@ -47,7 +47,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Note:      req.Note,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
 
@@ -63,16 +63,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "owner role required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 	invs, err := h.svc.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, invs)
@@ -82,16 +82,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "owner role required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.svc.Revoke(r.Context(), id); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -101,13 +101,13 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	rawToken := r.URL.Query().Get("token")
 	if rawToken == "" {
-		writeError(w, http.StatusBadRequest, "token required")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "token required")
 		return
 	}
 	inv, err := h.svc.Validate(r.Context(), rawToken)
 	if err != nil {
 		// Do not distinguish invalid/expired/revoked — same message always.
-		writeError(w, http.StatusNotFound, "invitation not found or expired")
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "invitation not found or expired")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -123,11 +123,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+func writeError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    http.StatusText(status),
+		Code:    code,
 		Message: msg,
 	})
 }

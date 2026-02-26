@@ -11,7 +11,9 @@ import (
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
-const refreshCookieName = "haven_refresh"
+// RefreshCookieName is the name of the HttpOnly cookie used to store
+// the refresh token. Shared with bootstrap/handler.go for initial token issuance.
+const RefreshCookieName = "haven_refresh"
 
 // Handler serves auth endpoints.
 type Handler struct {
@@ -197,7 +199,7 @@ func (h *Handler) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    raw,
 		Path:     "/api/haven/auth/refresh",
 		Expires:  expires,
@@ -210,7 +212,7 @@ func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires ti
 
 func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     "/api/haven/auth/refresh",
 		MaxAge:   -1,
@@ -223,33 +225,14 @@ func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
 // refreshTokenFromRequest extracts the raw refresh token from either the
 // HttpOnly cookie (web clients) or X-Refresh-Token header (mobile clients).
 func refreshTokenFromRequest(r *http.Request) string {
-	if c, err := r.Cookie(refreshCookieName); err == nil {
+	if c, err := r.Cookie(RefreshCookieName); err == nil {
 		return c.Value
 	}
 	return r.Header.Get("X-Refresh-Token")
 }
 
 func errorCode(err error) string {
-	switch {
-	case pkgerrors.Is(err, pkgerrors.ErrInvalidCredentials):
-		return "INVALID_CREDENTIALS"
-	case pkgerrors.Is(err, pkgerrors.ErrAccountLocked):
-		return "ACCOUNT_LOCKED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenReuseDetected):
-		return "TOKEN_REUSE_DETECTED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenRevoked):
-		return "TOKEN_REVOKED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenExpired):
-		return "TOKEN_EXPIRED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenInvalid):
-		return "INVALID_INVITATION"
-	case pkgerrors.Is(err, pkgerrors.ErrEmailTaken):
-		return "EMAIL_TAKEN"
-	case pkgerrors.Is(err, pkgerrors.ErrPasswordTooShort):
-		return "PASSWORD_TOO_SHORT"
-	default:
-		return "ERROR"
-	}
+	return pkgerrors.ErrorCode(err)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
