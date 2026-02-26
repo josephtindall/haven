@@ -69,7 +69,7 @@ These are not style preferences. Any deviation is a bug.
 ### JWT
 - HMAC-SHA256, 15-minute access token lifetime exactly. No exceptions.
 - Payload contains only: `sub`, `did`, `role`, `iat`, `exp`, `jti`.
-- 512-bit signing key from environment. Fatal startup error if absent.
+- 256-bit signing key from environment. Fatal startup error if absent.
 
 ### Refresh Tokens
 - 32 random bytes, base64url encoded.
