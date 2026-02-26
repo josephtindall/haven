@@ -129,7 +129,7 @@ func run() error {
 	userHandler := user.NewHandler(userSvc, sessionSvc)
 	deviceHandler := device.NewHandler(deviceSvc, sessionSvc)
 	prefHandler := preferences.NewHandler(prefSvc)
-	invHandler := invitation.NewHandler(invitationSvc)
+	invHandler := invitation.NewHandler(invitationSvc, cfg.BaseURL)
 	authzHandler := authz.NewHandler(authzAuthorizer, auditSvc)
 
 	// ── 9. Router ─────────────────────────────────────────────────────────────

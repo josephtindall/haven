@@ -330,6 +330,12 @@ func (s *Service) Logout(ctx context.Context, userID, deviceID string) error {
 }
 
 // LogoutAll revokes all sessions for a user across every device.
+// GetUser returns the user record for the given ID. Used by the Validate
+// handler to enrich the response with fields not carried in the JWT.
+func (s *Service) GetUser(ctx context.Context, id string) (*user.User, error) {
+	return s.users.GetByID(ctx, id)
+}
+
 func (s *Service) LogoutAll(ctx context.Context, userID string) error {
 	if err := s.tokens.RevokeAllForUser(ctx, userID); err != nil {
 		return fmt.Errorf("session.Service.LogoutAll: %w", err)

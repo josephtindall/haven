@@ -10,7 +10,8 @@ import (
 // re-read at runtime. Missing or invalid security values are fatal.
 type Config struct {
 	// Server
-	Port string // HAVEN_PORT — default "8080"
+	Port    string // HAVEN_PORT    — default "8080"
+	BaseURL string // HAVEN_BASE_URL — required; public-facing URL, e.g. https://haven.example.com
 
 	// Database — assembled into DBURL by Load(); never set directly.
 	DBHost    string // HAVEN_DB_HOST    — default "localhost"
@@ -38,6 +39,7 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Port:          envOrDefault("HAVEN_PORT", "8080"),
+		BaseURL:       os.Getenv("HAVEN_BASE_URL"),
 		DBHost:        envOrDefault("HAVEN_DB_HOST", "localhost"),
 		DBPort:        envOrDefault("HAVEN_DB_PORT", "5432"),
 		DBUser:        envOrDefault("HAVEN_DB_USER", "haven_app"),
@@ -49,6 +51,9 @@ func Load() (*Config, error) {
 		SetupToken:    os.Getenv("HAVEN_SETUP_TOKEN"),
 	}
 
+	if cfg.BaseURL == "" {
+		return nil, fmt.Errorf("HAVEN_BASE_URL is required (e.g. https://haven.example.com)")
+	}
 	if cfg.DBPass == "" {
 		return nil, fmt.Errorf("HAVEN_DB_PASS is required")
 	}

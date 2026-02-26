@@ -11,12 +11,13 @@ import (
 
 // Handler serves invitation endpoints.
 type Handler struct {
-	svc *Service
+	svc     *Service
+	baseURL string // HAVEN_BASE_URL — used to build join links, e.g. https://haven.example.com
 }
 
 // NewHandler constructs the invitation handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, baseURL string) *Handler {
+	return &Handler{svc: svc, baseURL: baseURL}
 }
 
 // Create handles POST /api/haven/invitations.
@@ -48,10 +49,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The join URL encodes the raw token — clients show a QR code and copyable link.
-	// TODO: derive base URL from config
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         inv.ID,
-		"join_url":   "/join?token=" + rawToken,
+		"join_url":   h.baseURL + "/api/haven/join?token=" + rawToken,
 		"expires_at": inv.ExpiresAt,
 	})
 }
