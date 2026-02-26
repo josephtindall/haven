@@ -266,16 +266,20 @@ func (s *Service) Refresh(ctx context.Context, rawToken string) (*TokenPair, err
 
 	// Reuse detection — consumed token presented again.
 	if rt.ConsumedAt != nil {
-		dev, _ := s.devices.GetByID(ctx, rt.DeviceID)
-		userID := ""
-		if dev != nil {
-			userID = dev.UserID
+		dev, err := s.devices.GetByID(ctx, rt.DeviceID)
+		if err != nil {
+			// Device lookup failed — revoke by device as a fallback so the
+			// compromised token family is at least neutralised.
+			slog.Error("token reuse: device lookup failed, revoking by device",
+				"device_id", rt.DeviceID, "err", err)
+			_ = s.tokens.RevokeAllForDevice(ctx, rt.DeviceID)
+		} else {
+			_ = s.tokens.RevokeAllForUser(ctx, dev.UserID)
 		}
-		_ = s.tokens.RevokeAllForUser(ctx, userID)
 		s.audit.WriteAsync(ctx, audit.Event{
 			DeviceID: rt.DeviceID,
 			Event:    audit.EventTokenReuseDetected,
-			Metadata: map[string]any{"all_sessions_revoked": true},
+			Metadata: map[string]any{"all_sessions_revoked": err == nil},
 		})
 		return nil, pkgerrors.ErrTokenReuseDetected
 	}

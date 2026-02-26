@@ -143,7 +143,14 @@ func run() error {
 
 	// ── Health (always reachable, all bootstrap states) ───────────────────────
 	r.Get("/api/haven/health", func(w http.ResponseWriter, r *http.Request) {
-		state, _ := bootstrapRepo.Get(r.Context())
+		state, err := bootstrapRepo.Get(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "degraded",
+				"error":  "database unreachable",
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{
 			"status": "ok",
 			"state":  string(state.SetupState),

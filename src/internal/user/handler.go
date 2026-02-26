@@ -128,6 +128,10 @@ func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
+	if claims.Role != "builtin:instance-owner" {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if err := h.svc.UnlockAccount(r.Context(), id, claims.Subject); err != nil {
 		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
