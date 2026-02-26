@@ -1,99 +1,14 @@
-# ── Secrets & Environment ─────────────────────────────────────────────────────
-.env
-.env.local
-.env.*.local
-*.env
-dev.ps1
+# Ignore everything by default — only the file types listed below are tracked.
+*
 
-# Allow the example file — this is safe to commit
-!.env.example
-
-# ── Go ────────────────────────────────────────────────────────────────────────
-# Compiled binaries
-/haven
-/haven-cli
-/bin/
-/dist/
-
-# Test output
-*.test
-*.out
-coverage.html
-coverage.out
-
-# Go workspace (local only)
-go.work
-go.work.sum
-*.exe
-
-# Vendor directory (use Go modules instead)
-vendor/
-
-# ── Certificates & Keys ───────────────────────────────────────────────────────
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-*.jks
-/certs/
-/ca/
-
-# ── Docker ────────────────────────────────────────────────────────────────────
-# Local override compose files
-docker-compose.local.yml
-docker-compose.override.yml
-
-# ── Database ──────────────────────────────────────────────────────────────────
-*.sql.bak
-/pgdata/
-
-# ── IDE & Editor ──────────────────────────────────────────────────────────────
-# VS Code
-.vscode/
-!.vscode/extensions.json
-!.vscode/settings.json.example
-
-# JetBrains
-.idea/
-*.iml
-
-# Vim / Neovim
-*.swp
-*.swo
-*~
-.netrwhist
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# Linux
-*~
-
-# ── Logs ──────────────────────────────────────────────────────────────────────
-*.log
-logs/
-
-# ── Temp & Build ──────────────────────────────────────────────────────────────
-tmp/
-temp/
-.tmp/
-*.tmp
-
-# ── Test Fixtures ─────────────────────────────────────────────────────────────
-# Keep test fixtures in version control — only ignore generated ones
-testdata/generated/
-
-# ── Claude Code ───────────────────────────────────────────────────────────────
-# Claude Code session files — local only
-.claude/
-.claude/sessions/
+# ── Tracked ───────────────────────────────────────────────────────────────────
+!.gitignore
+!*.go
+!*.md
+!*.yml
+!*.yaml
+!*.sql
+!*.mod
+!go.sum
+!*.example
+!Dockerfile
