@@ -16,73 +16,81 @@ Read this before writing any code:
 ## Repository Structure
 
 ```
-haven/
-  cmd/
-    server/
-      main.go              # wire deps, start server — zero business logic
-    cli/
-      main.go              # haven-cli entrypoint
-  internal/
-    bootstrap/
-      state.go             # UNCLAIMED | SETUP | ACTIVE state machine
-      middleware.go        # BootstrapGate — enforced on every request
-      handler.go           # setup wizard API handlers
-    user/
-      model.go             # User, Role — pure structs
-      service.go           # business logic
-      repository.go        # UserRepository interface
-      handler.go           # HTTP handlers
-      postgres/
-        repository.go      # implements UserRepository
-    device/
-      model.go, service.go, repository.go, handler.go
-      postgres/repository.go
-    session/
-      model.go, service.go, repository.go, handler.go
-      postgres/repository.go
-    audit/
-      model.go             # AuditEvent
-      service.go           # async write queue — never blocks request path
-      repository.go        # AuditRepository interface (INSERT only)
-      postgres/
-        repository.go
-    authz/
-      authorizer.go        # evaluates all four permission dimensions
-      handler.go           # POST /api/haven/authz/check
-    invitation/
-      model.go, service.go, repository.go, handler.go
-      postgres/repository.go
-    preferences/
-      model.go, service.go, repository.go, handler.go
-      postgres/repository.go
-  pkg/
-    crypto/
-      argon2.go            # HashPassword(), VerifyPassword() — Argon2id ONLY
-    token/
-      jwt.go               # JWT generation and validation
-      refresh.go           # refresh token generation, hashing, rotation
-    middleware/
-      auth.go              # Bearer token validation on protected routes
-      ratelimit.go         # per-IP rate limiting on login/register
-      requestid.go
-      logger.go
-    config/
-      config.go            # all config loaded and validated at startup
-    errors/
-      errors.go            # sentinel errors + HTTP error response helpers
-    shortid/
-      shortid.go           # not used by Haven directly — included for Luma consumers
+haven/                       # repo root — GitHub files and docs only
   docs/
-    haven-design.md
-  migrations/
-    0001_core_tables.sql
-    0002_user_preferences.sql
-    0003_rbac_tables.sql
-    0004_invitations.sql
-  docker-compose.yml
-  docker-compose.dev.yml
-  Dockerfile
-  .env.example
+    haven-design.md          # complete spec (read before writing code)
+    rbac-design.md
+    testing-guide.md
+  .env.example               # copy to .env and fill in secrets
+  CLAUDE.md
+  README.md
+  src/                       # all source code lives here
+    cmd/
+      server/
+        main.go              # wire deps, start server — zero business logic
+      cli/
+        main.go              # haven-cli entrypoint
+    internal/
+      bootstrap/
+        state.go             # UNCLAIMED | SETUP | ACTIVE state machine
+        middleware.go        # BootstrapGate — enforced on every request
+        handler.go           # setup wizard API handlers
+      user/
+        model.go             # User, Role — pure structs
+        service.go           # business logic
+        repository.go        # UserRepository interface
+        handler.go           # HTTP handlers
+        postgres/
+          repository.go      # implements UserRepository
+      device/
+        model.go, service.go, repository.go, handler.go
+        postgres/repository.go
+      session/
+        model.go, service.go, repository.go, handler.go
+        postgres/repository.go
+      audit/
+        model.go             # AuditEvent
+        service.go           # async write queue — never blocks request path
+        repository.go        # AuditRepository interface (INSERT only)
+        postgres/
+          repository.go
+      authz/
+        authorizer.go        # evaluates all four permission dimensions
+        handler.go           # POST /api/haven/authz/check
+      invitation/
+        model.go, service.go, repository.go, handler.go
+        postgres/repository.go
+      preferences/
+        model.go, service.go, repository.go, handler.go
+        postgres/repository.go
+      integration/           # integration tests (require real PostgreSQL)
+    pkg/
+      crypto/
+        argon2.go            # HashPassword(), VerifyPassword() — Argon2id ONLY
+      token/
+        jwt.go               # JWT generation and validation
+        refresh.go           # refresh token generation, hashing, rotation
+      middleware/
+        auth.go              # Bearer token validation on protected routes
+        ratelimit.go         # per-IP rate limiting on login/register
+        requestid.go
+        logger.go
+      config/
+        config.go            # all config loaded and validated at startup
+      errors/
+        errors.go            # sentinel errors + HTTP error response helpers
+      shortid/
+        shortid.go           # not used by Haven directly — included for Luma consumers
+    migrations/
+      0001_core_tables.sql
+      0002_user_preferences.sql
+      0003_rbac_tables.sql
+      0004_invitations.sql
+    docker-compose.yml
+    docker-compose.dev.yml
+    Dockerfile
+    go.mod
+    go.sum
 ```
 
 ## Technology Stack
@@ -183,18 +191,28 @@ ErrSetupComplete        // 410
 
 ## Commands
 
-```bash
-# Start full stack (postgres + redis + haven)
-docker compose up
+All Go and Docker commands are run from the `src/` directory unless noted.
 
-# Start for development (with live reload)
-docker compose -f docker-compose.dev.yml up
+```bash
+# Load dev environment (PowerShell — run from repo root)
+. .\src\dev.ps1
+
+# Start full stack (postgres + redis + haven) — from repo root
+docker compose -f src/docker-compose.yml up
+
+# Start for development (with live reload) — from repo root
+docker compose -f src/docker-compose.dev.yml up
+
+# All commands below are run from src/
 
 # Run tests (always use race detector)
 go test -race ./...
 
 # Run tests for a specific package
 go test -race ./internal/user/...
+
+# Run integration tests (requires PostgreSQL)
+HAVEN_TEST_DB_URL=postgres://... go test -race -v ./internal/integration/
 
 # Apply migrations
 go run ./cmd/migrate up
@@ -206,10 +224,10 @@ go run ./cmd/migrate down
 go run ./cmd/cli generate-secrets
 
 # Validate config
-go run ./cmd/cli validate-config --env-file .env
+go run ./cmd/cli validate-config --env-file ../.env
 
-# Build Docker image
-docker build -t haven:dev .
+# Build Docker image — from repo root
+docker build -f src/Dockerfile -t haven:dev src/
 
 # Lint
 golangci-lint run ./...
