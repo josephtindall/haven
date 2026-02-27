@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -22,49 +23,35 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	p, err := h.svc.Get(r.Context(), claims.Subject)
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	httputil.WriteJSON(w, http.StatusOK, p)
 }
 
 // Update handles PATCH /api/haven/users/me/preferences.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	var params UpdateParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
 	if err := h.svc.Update(r.Context(), claims.Subject, params); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    code,
-		Message: msg,
-	})
-}

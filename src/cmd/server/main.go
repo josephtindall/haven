@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -38,7 +37,7 @@ import (
 	userpg "github.com/josephtindall/haven/internal/user/postgres"
 	"github.com/josephtindall/haven/migrations"
 	"github.com/josephtindall/haven/pkg/config"
-	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 	pkgmiddleware "github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -146,13 +145,13 @@ func run() error {
 	r.Get("/api/haven/health", func(w http.ResponseWriter, r *http.Request) {
 		state, err := bootstrapRepo.Get(r.Context())
 		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "degraded",
 				"error":  "database unreachable",
 			})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{
+		httputil.WriteJSON(w, http.StatusOK, map[string]string{
 			"status": "ok",
 			"state":  string(state.SetupState),
 		})
@@ -247,11 +246,11 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := pkgmiddleware.ClaimsFromContext(r.Context())
 		if claims == nil {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+			httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}
 		if all && claims.Role != "builtin:instance-owner" {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+			httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 			return
 		}
 		var (
@@ -264,21 +263,10 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 			rows, err = repo.ListForUser(r.Context(), claims.Subject, 100, 0)
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load audit log")
+			httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load audit log")
 			return
 		}
-		writeJSON(w, http.StatusOK, rows)
+		httputil.WriteJSON(w, http.StatusOK, rows)
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{Code: code, Message: msg})
-}

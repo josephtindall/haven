@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -24,11 +25,11 @@ func NewHandler(svc *Service, baseURL string) *Handler {
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 
@@ -37,7 +38,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Note  string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
@@ -47,12 +48,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Note:      req.Note,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
 
 	// The join URL encodes the raw token — clients show a QR code and copyable link.
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httputil.WriteJSON(w, http.StatusCreated, map[string]any{
 		"id":         inv.ID,
 		"join_url":   h.baseURL + "/api/haven/join?token=" + rawToken,
 		"expires_at": inv.ExpiresAt,
@@ -63,35 +64,35 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 	invs, err := h.svc.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, invs)
+	httputil.WriteJSON(w, http.StatusOK, invs)
 }
 
 // Revoke handles DELETE /api/haven/invitations/{id} — owner only.
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.svc.Revoke(r.Context(), id); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -101,33 +102,19 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	rawToken := r.URL.Query().Get("token")
 	if rawToken == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "token required")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "token required")
 		return
 	}
 	inv, err := h.svc.Validate(r.Context(), rawToken)
 	if err != nil {
 		// Do not distinguish invalid/expired/revoked — same message always.
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "invitation not found or expired")
+		httputil.WriteError(w, http.StatusNotFound, "NOT_FOUND", "invitation not found or expired")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"invitation_id": inv.ID,
 		"email":         inv.Email,
 		"note":          inv.Note,
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    code,
-		Message: msg,
-	})
-}
