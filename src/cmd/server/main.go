@@ -38,6 +38,7 @@ import (
 	userpg "github.com/josephtindall/haven/internal/user/postgres"
 	"github.com/josephtindall/haven/migrations"
 	"github.com/josephtindall/haven/pkg/config"
+	pkgerrors "github.com/josephtindall/haven/pkg/errors"
 	pkgmiddleware "github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -279,5 +280,5 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": msg})
+	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{Code: code, Message: msg})
 }
