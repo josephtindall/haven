@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync/atomic"
+	"sync"
 )
 
 // Service is the interface the rest of the codebase calls to write audit events.
@@ -20,7 +20,9 @@ type Service interface {
 type AsyncService struct {
 	repo    Repository
 	queue   chan Event
-	stopped atomic.Bool
+	mu      sync.Mutex
+	stopped bool
+	done    chan struct{}
 }
 
 const queueSize = 1024
@@ -31,6 +33,7 @@ func NewAsyncService(repo Repository) *AsyncService {
 	s := &AsyncService{
 		repo:  repo,
 		queue: make(chan Event, queueSize),
+		done:  make(chan struct{}),
 	}
 	go s.drain()
 	return s
@@ -40,7 +43,9 @@ func NewAsyncService(repo Repository) *AsyncService {
 // stopped, the event is dropped and logged — availability beats perfect audit
 // completeness.
 func (s *AsyncService) WriteAsync(ctx context.Context, e Event) {
-	if s.stopped.Load() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
 		slog.Warn("audit service stopped — event dropped", "event", e.Event)
 		return
 	}
@@ -53,11 +58,15 @@ func (s *AsyncService) WriteAsync(ctx context.Context, e Event) {
 
 // Stop drains remaining events and shuts down the worker. Call on server shutdown.
 func (s *AsyncService) Stop() {
-	s.stopped.Store(true)
+	s.mu.Lock()
+	s.stopped = true
 	close(s.queue)
+	s.mu.Unlock()
+	<-s.done
 }
 
 func (s *AsyncService) drain() {
+	defer close(s.done)
 	for e := range s.queue {
 		// Use a background context — the original request context may be cancelled.
 		if err := s.repo.Insert(context.Background(), e); err != nil {
