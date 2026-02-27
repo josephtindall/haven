@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 )
 
@@ -53,6 +54,9 @@ func Load() (*Config, error) {
 
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("HAVEN_BASE_URL is required (e.g. https://haven.example.com)")
+	}
+	if u, err := url.Parse(cfg.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("HAVEN_BASE_URL must be a valid URL with scheme and host (e.g. https://haven.example.com)")
 	}
 	if cfg.DBPass == "" {
 		return nil, fmt.Errorf("HAVEN_DB_PASS is required")

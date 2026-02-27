@@ -6,12 +6,14 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -163,7 +165,7 @@ func lastApplied(ctx context.Context, db *pgxpool.Pool) (string, error) {
 	err := db.QueryRow(ctx,
 		`SELECT filename FROM haven.schema_migrations ORDER BY applied_at DESC, filename DESC LIMIT 1`,
 	).Scan(&name)
-	if err != nil && err.Error() == "no rows in result set" {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {

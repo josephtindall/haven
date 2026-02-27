@@ -2,11 +2,11 @@ package device
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -31,29 +31,29 @@ func NewHandler(svc *Service, sessions SessionRevoker) *Handler {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	devices, err := h.svc.ListForUser(r.Context(), claims.Subject)
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, devices)
+	httputil.WriteJSON(w, http.StatusOK, devices)
 }
 
 // Revoke handles DELETE /api/haven/devices/{id}.
 func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	deviceID := chi.URLParam(r, "id")
 	if err := h.svc.Revoke(r.Context(), deviceID, claims.Subject); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), pkgerrors.ErrorCode(err), err.Error())
 		return
 	}
 
@@ -63,17 +63,3 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(pkgerrors.ErrorResponse{
-		Code:    http.StatusText(status),
-		Message: msg,
-	})
-}

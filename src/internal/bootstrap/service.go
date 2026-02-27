@@ -18,6 +18,9 @@ import (
 // bcp47Pattern matches well-formed BCP-47 language tags, e.g. "en", "en-US", "zh-Hans-CN".
 var bcp47Pattern = regexp.MustCompile(`^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{1,8})*$`)
 
+// ErrInvalidName is returned when the instance name fails validation.
+var ErrInvalidName = fmt.Errorf("instance name must be 2–64 characters")
+
 const (
 	setupTokenLifetime = 2 * time.Hour    // UNCLAIMED token validity
 	setupWindowTimeout = 30 * time.Minute // SETUP state window after token verified
@@ -131,7 +134,7 @@ func (s *Service) ConfigureInstance(ctx context.Context, name, locale, timezone 
 		return err
 	}
 	if len(name) < 2 || len(name) > 64 {
-		return fmt.Errorf("bootstrap: instance name must be 2–64 characters")
+		return ErrInvalidName
 	}
 	if _, err := time.LoadLocation(timezone); err != nil {
 		return fmt.Errorf("bootstrap: invalid timezone %q: must be a valid IANA timezone (e.g. \"America/New_York\")", timezone)

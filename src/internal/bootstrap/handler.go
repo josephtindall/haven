@@ -2,13 +2,14 @@ package bootstrap
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/josephtindall/haven/internal/session"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 )
 
 // Handler serves the setup wizard API endpoints.
@@ -31,12 +32,12 @@ func (h *Handler) VerifyToken(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "token required")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "token required")
 		return
 	}
 
 	if err := h.svc.VerifyToken(r.Context(), req.Token); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -50,16 +51,16 @@ func (h *Handler) ConfigureInstance(w http.ResponseWriter, r *http.Request) {
 		Timezone string `json:"timezone"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 	if req.Name == "" || req.Locale == "" || req.Timezone == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "name, locale, and timezone are required")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "name, locale, and timezone are required")
 		return
 	}
 
 	if err := h.svc.ConfigureInstance(r.Context(), req.Name, req.Locale, req.Timezone); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -82,16 +83,16 @@ func (h *Handler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 		Fingerprint  string `json:"fingerprint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 	if !req.Confirmed {
-		writeError(w, http.StatusBadRequest, "CONFIRMATION_REQUIRED",
+		httputil.WriteError(w, http.StatusBadRequest, "CONFIRMATION_REQUIRED",
 			"explicit acknowledgment is required")
 		return
 	}
 	if req.DisplayName == "" || req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST",
 			"display_name, email, and password are required")
 		return
 	}
@@ -115,7 +116,7 @@ func (h *Handler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 		Timezone:     req.Timezone,
 	})
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 
@@ -130,13 +131,13 @@ func (h *Handler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		// Instance is ACTIVE but token issuance failed — non-fatal.
-		writeError(w, http.StatusInternalServerError, "TOKEN_ERROR",
+		httputil.WriteError(w, http.StatusInternalServerError, "TOKEN_ERROR",
 			"owner created but token issuance failed; please log in manually")
 		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "haven_refresh",
+		Name:     session.RefreshCookieName,
 		Value:    pair.RefreshToken,
 		Path:     "/api/haven/auth/refresh",
 		Expires:  pair.ExpiresAt,
@@ -146,7 +147,7 @@ func (h *Handler) CreateOwner(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	writeJSON(w, http.StatusCreated, map[string]string{
+	httputil.WriteJSON(w, http.StatusCreated, map[string]string{
 		"access_token": pair.AccessToken,
 		"user_id":      userID,
 	})
@@ -158,7 +159,6 @@ func errorCode(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
 	switch {
 	case pkgerrors.Is(err, pkgerrors.ErrSetupComplete):
 		return "SETUP_COMPLETE"
@@ -170,27 +170,13 @@ func errorCode(err error) string {
 		return "PASSWORD_TOO_SHORT"
 	case pkgerrors.Is(err, pkgerrors.ErrSetupRequired):
 		return "SETUP_REQUIRED"
-	case strings.Contains(msg, "2–64"):
+	case errors.Is(err, ErrInvalidName):
 		return "INVALID_NAME"
 	default:
 		return "INTERNAL_ERROR"
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"code":    code,
-		"message": msg,
-	})
-}
 
 // remoteIP strips the port from r.RemoteAddr so it can be stored as INET.
 func remoteIP(r *http.Request) string {

@@ -8,10 +8,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	pkgerrors "github.com/josephtindall/haven/pkg/errors"
+	"github.com/josephtindall/haven/pkg/httputil"
 	"github.com/josephtindall/haven/pkg/middleware"
 )
 
-const refreshCookieName = "haven_refresh"
+// RefreshCookieName is the name of the HttpOnly cookie used to store
+// the refresh token. Shared with bootstrap/handler.go for initial token issuance.
+const RefreshCookieName = "haven_refresh"
 
 // Handler serves auth endpoints.
 type Handler struct {
@@ -36,12 +39,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Fingerprint  string `json:"fingerprint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
 	if req.InvitationID == "" || req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invitation_id, email, and password are required")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invitation_id, email, and password are required")
 		return
 	}
 
@@ -57,12 +60,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		IPAddress:    remoteIP(r),
 	})
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 
 	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
-	writeJSON(w, http.StatusCreated, map[string]string{
+	httputil.WriteJSON(w, http.StatusCreated, map[string]string{
 		"access_token": pair.AccessToken,
 	})
 }
@@ -77,7 +80,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Fingerprint string `json:"fingerprint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
@@ -91,12 +94,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		IPAddress:   remoteIP(r),
 	})
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 
 	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
-	writeJSON(w, http.StatusOK, map[string]string{
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{
 		"access_token": pair.AccessToken,
 	})
 }
@@ -106,18 +109,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	raw := refreshTokenFromRequest(r)
 	if raw == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no refresh token")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no refresh token")
 		return
 	}
 
 	pair, err := h.svc.Refresh(r.Context(), raw)
 	if err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 
 	h.setRefreshCookie(w, pair.RefreshToken, pair.ExpiresAt)
-	writeJSON(w, http.StatusOK, map[string]string{
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{
 		"access_token": pair.AccessToken,
 	})
 }
@@ -126,11 +129,11 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if err := h.svc.Logout(r.Context(), claims.Subject, claims.DeviceID); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 	h.clearRefreshCookie(w)
@@ -141,11 +144,11 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if err := h.svc.LogoutAll(r.Context(), claims.Subject); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 	h.clearRefreshCookie(w)
@@ -156,17 +159,17 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 
 	u, err := h.svc.GetUser(r.Context(), claims.Subject)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "could not load user")
+		httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "could not load user")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{
 		"user_id":       u.ID,
 		"email":         u.Email,
 		"display_name":  u.DisplayName,
@@ -179,17 +182,17 @@ func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromContext(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
 	if claims.Role != "builtin:instance-owner" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 		return
 	}
 
 	targetID := chi.URLParam(r, "id")
 	if err := h.svc.LogoutAll(r.Context(), targetID); err != nil {
-		writeError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
+		httputil.WriteError(w, pkgerrors.HTTPStatus(err), errorCode(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -197,7 +200,7 @@ func (h *Handler) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    raw,
 		Path:     "/api/haven/auth/refresh",
 		Expires:  expires,
@@ -210,7 +213,7 @@ func (h *Handler) setRefreshCookie(w http.ResponseWriter, raw string, expires ti
 
 func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     "/api/haven/auth/refresh",
 		MaxAge:   -1,
@@ -223,46 +226,16 @@ func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
 // refreshTokenFromRequest extracts the raw refresh token from either the
 // HttpOnly cookie (web clients) or X-Refresh-Token header (mobile clients).
 func refreshTokenFromRequest(r *http.Request) string {
-	if c, err := r.Cookie(refreshCookieName); err == nil {
+	if c, err := r.Cookie(RefreshCookieName); err == nil {
 		return c.Value
 	}
 	return r.Header.Get("X-Refresh-Token")
 }
 
 func errorCode(err error) string {
-	switch {
-	case pkgerrors.Is(err, pkgerrors.ErrInvalidCredentials):
-		return "INVALID_CREDENTIALS"
-	case pkgerrors.Is(err, pkgerrors.ErrAccountLocked):
-		return "ACCOUNT_LOCKED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenReuseDetected):
-		return "TOKEN_REUSE_DETECTED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenRevoked):
-		return "TOKEN_REVOKED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenExpired):
-		return "TOKEN_EXPIRED"
-	case pkgerrors.Is(err, pkgerrors.ErrTokenInvalid):
-		return "INVALID_INVITATION"
-	case pkgerrors.Is(err, pkgerrors.ErrEmailTaken):
-		return "EMAIL_TAKEN"
-	case pkgerrors.Is(err, pkgerrors.ErrPasswordTooShort):
-		return "PASSWORD_TOO_SHORT"
-	default:
-		return "ERROR"
-	}
+	return pkgerrors.ErrorCode(err)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": msg})
-}
 
 // remoteIP strips the port from r.RemoteAddr so it can be stored as INET.
 func remoteIP(r *http.Request) string {

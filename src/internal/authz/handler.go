@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/josephtindall/haven/internal/audit"
+	"github.com/josephtindall/haven/pkg/httputil"
 	pkgmiddleware "github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -24,23 +25,13 @@ func NewHandler(authz Authorizer, auditSvc audit.Service) *Handler {
 func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	var req CheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"code":    "BAD_REQUEST",
-			"message": "invalid body",
-		})
+		httputil.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
 	result, err := h.authz.Check(r.Context(), req)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"code":    "INTERNAL_ERROR",
-			"message": "permission check failed",
-		})
+		httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "permission check failed")
 		return
 	}
 
@@ -64,7 +55,6 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(result)
+	httputil.WriteJSON(w, http.StatusOK, result)
 }
+

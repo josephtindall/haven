@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ func IPRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 			if err != nil {
 				// Redis unavailable — fail open to avoid blocking legitimate users,
 				// but log the error so ops is alerted.
+				slog.Error("rate limiter: redis unavailable, failing open", "ip", ip, "err", err)
 				next.ServeHTTP(w, r)
 				return
 			}

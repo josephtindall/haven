@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -38,6 +37,7 @@ import (
 	userpg "github.com/josephtindall/haven/internal/user/postgres"
 	"github.com/josephtindall/haven/migrations"
 	"github.com/josephtindall/haven/pkg/config"
+	"github.com/josephtindall/haven/pkg/httputil"
 	pkgmiddleware "github.com/josephtindall/haven/pkg/middleware"
 )
 
@@ -143,8 +143,15 @@ func run() error {
 
 	// ── Health (always reachable, all bootstrap states) ───────────────────────
 	r.Get("/api/haven/health", func(w http.ResponseWriter, r *http.Request) {
-		state, _ := bootstrapRepo.Get(r.Context())
-		writeJSON(w, http.StatusOK, map[string]string{
+		state, err := bootstrapRepo.Get(r.Context())
+		if err != nil {
+			httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "degraded",
+				"error":  "database unreachable",
+			})
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, map[string]string{
 			"status": "ok",
 			"state":  string(state.SetupState),
 		})
@@ -239,11 +246,11 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := pkgmiddleware.ClaimsFromContext(r.Context())
 		if claims == nil {
-			w.WriteHeader(http.StatusUnauthorized)
+			httputil.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}
 		if all && claims.Role != "builtin:instance-owner" {
-			w.WriteHeader(http.StatusForbidden)
+			httputil.WriteError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
 			return
 		}
 		var (
@@ -256,16 +263,10 @@ func auditHandler(repo audit.Repository, all bool) http.HandlerFunc {
 			rows, err = repo.ListForUser(r.Context(), claims.Subject, 100, 0)
 		}
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			httputil.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load audit log")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(rows)
+		httputil.WriteJSON(w, http.StatusOK, rows)
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
