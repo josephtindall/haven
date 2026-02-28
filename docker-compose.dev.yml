@@ -33,14 +33,11 @@ services:
 
   haven:
     build:
-      context: .
-      target: builder # reuse the builder stage — has Go toolchain + Air
-      dockerfile: Dockerfile
-    # Override entrypoint to run Air for live reload.
-    entrypoint: [ "sh", "-c", "go install github.com/air-verse/air@latest && air -c .air.toml" ]
+      context: ./src
+      dockerfile: Dockerfile.dev
     working_dir: /app
     volumes:
-      - .:/app # mount source so Air detects changes
+      - ./src:/app
       - gomod_cache:/go/pkg/mod
     ports:
       - "8080:8080"

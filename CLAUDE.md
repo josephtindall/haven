@@ -86,11 +86,12 @@ haven/                       # repo root — GitHub files and docs only
       0002_user_preferences.sql
       0003_rbac_tables.sql
       0004_invitations.sql
-    docker-compose.yml
-    docker-compose.dev.yml
     Dockerfile
+    Dockerfile.dev
     go.mod
     go.sum
+  docker-compose.yml             # production — run from repo root
+  docker-compose.dev.yml         # development — run from repo root
 ```
 
 ## Technology Stack
@@ -198,10 +199,10 @@ All Go and Docker commands are run from the `src/` directory unless noted.
 . .\src\dev.ps1
 
 # Start full stack (postgres + redis + haven) — from repo root
-docker compose -f src/docker-compose.yml up
+docker compose up
 
 # Start for development (with live reload) — from repo root
-docker compose -f src/docker-compose.dev.yml up
+docker compose -f docker-compose.dev.yml up
 
 # All commands below are run from src/
 
