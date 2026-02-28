@@ -33,7 +33,9 @@ services:
       - internal
 
   haven:
-    build: .
+    build:
+      context: ./src
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       HAVEN_DB_HOST: postgres
