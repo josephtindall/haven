@@ -17,4 +17,10 @@
 !go.sum
 !*.example
 !Dockerfile*
+!*.ps1
 !.github/
+!.gitkeep
+
+# ── Ignored even if matched above ───────────────────────────────────────────
+artifacts/*
+!artifacts/.gitkeep
