@@ -102,7 +102,7 @@ if ($Tag -ne "latest") {
 # ── Extract binaries (optional) ─────────────────────────────────────────────
 
 if ($WithBinaries) {
-    Write-Step "Extracting binaries from image into ./artifacts/"
+    Write-Step "Extracting server binary from image into ./artifacts/"
 
     if (-not (Test-Path $ArtifactsDir)) { New-Item -ItemType Directory -Path $ArtifactsDir | Out-Null }
 

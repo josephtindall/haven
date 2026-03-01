@@ -5,7 +5,7 @@
 #   .\tools\win\clean.ps1 -Data        # also delete database and redis volumes
 #   .\tools\win\clean.ps1 -Images      # also remove haven Docker images
 #   .\tools\win\clean.ps1 -Full        # all of the above (nuclear option)
-#   .\tools\win\clean.ps1 -WhatIf      # preview what would be deleted
+#   .\tools\win\clean.ps1 -DryRun      # preview what would be deleted
 #
 # WHAT THIS DOES:
 #   Default (no flags):
@@ -32,7 +32,7 @@ param(
     [switch]$Data,
     [switch]$Images,
     [switch]$Full,
-    [switch]$WhatIf
+    [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -62,8 +62,8 @@ try {
             $downArgs = @("compose", "-f", $file, "down")
             if ($removeData) { $downArgs += "-v" }
 
-            if ($WhatIf) {
-                Write-Host "   [WhatIf] docker $($downArgs -join ' ')" -ForegroundColor Yellow
+            if ($DryRun) {
+                Write-Host "   [DryRun] docker $($downArgs -join ' ')" -ForegroundColor Yellow
             } else {
                 & docker @downArgs 2>$null
                 Write-Ok "Stopped containers from $file$(if ($removeData) { ' (volumes removed)' })"
@@ -80,8 +80,8 @@ finally {
 Write-Step "Removing build artifacts"
 
 if (Test-Path $ArtifactsDir) {
-    if ($WhatIf) {
-        Write-Host "   [WhatIf] Remove $ArtifactsDir" -ForegroundColor Yellow
+    if ($DryRun) {
+        Write-Host "   [DryRun] Remove $ArtifactsDir" -ForegroundColor Yellow
     } else {
         Remove-Item -Recurse -Force $ArtifactsDir
         Write-Ok "Deleted ./artifacts/"
@@ -91,8 +91,8 @@ if (Test-Path $ArtifactsDir) {
 }
 
 if (Test-Path $AirTmpDir) {
-    if ($WhatIf) {
-        Write-Host "   [WhatIf] Remove $AirTmpDir" -ForegroundColor Yellow
+    if ($DryRun) {
+        Write-Host "   [DryRun] Remove $AirTmpDir" -ForegroundColor Yellow
     } else {
         Remove-Item -Recurse -Force $AirTmpDir
         Write-Ok "Deleted src/tmp/ (Air live-reload cache)"
@@ -109,8 +109,8 @@ if ($removeImages) {
     foreach ($tag in @("haven:latest", "haven:dev")) {
         $exists = docker images -q $tag 2>$null
         if ($exists) {
-            if ($WhatIf) {
-                Write-Host "   [WhatIf] docker rmi $tag" -ForegroundColor Yellow
+            if ($DryRun) {
+                Write-Host "   [DryRun] docker rmi $tag" -ForegroundColor Yellow
             } else {
                 docker rmi $tag 2>$null
                 Write-Ok "Removed image $tag"
@@ -124,7 +124,7 @@ if ($removeImages) {
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 Write-Host ""
-if ($WhatIf) {
+if ($DryRun) {
     Write-Host "Dry run complete — nothing was deleted." -ForegroundColor Yellow
 } else {
     Write-Host "Clean complete." -ForegroundColor Green

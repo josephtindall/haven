@@ -220,7 +220,8 @@ func (s *Service) regenerateToken(ctx context.Context) error {
 	fmt.Printf("╔═══════════════════════════════════════════╗\n")
 	fmt.Printf("║  HAVEN SETUP CODE (expires in 2 hours)    ║\n")
 	fmt.Printf("╠═══════════════════════════════════════════╣\n")
-	fmt.Printf("║              %-8s                     ║\n", raw)
+	display := raw[:4] + "-" + raw[4:]
+	fmt.Printf("║              %-9s                    ║\n", display)
 	fmt.Printf("╚═══════════════════════════════════════════╝\n")
 	fmt.Printf("\n")
 	return nil

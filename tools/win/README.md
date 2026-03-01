@@ -108,7 +108,7 @@ This stops Haven and deletes temporary files but **keeps your database data**.
 
 ```powershell
 # Preview what would be deleted without actually deleting anything
-.\tools\win\clean.ps1 -WhatIf
+.\tools\win\clean.ps1 -DryRun
 
 # Also wipe the database (you'll need to set up Haven from scratch after this)
 .\tools\win\clean.ps1 -Data
@@ -156,7 +156,7 @@ Then push:
 | Stop Haven                    | Ctrl+C (or `.\tools\win\clean.ps1`)  |
 | Build the Docker image        | `.\tools\win\build.ps1`              |
 | Delete everything and restart | `.\tools\win\clean.ps1 -Full`        |
-| See what clean would delete   | `.\tools\win\clean.ps1 -WhatIf`      |
+| See what clean would delete   | `.\tools\win\clean.ps1 -DryRun`      |
 | Push image to a registry      | `.\tools\win\publish.ps1 -Registry …`|
 
 ---

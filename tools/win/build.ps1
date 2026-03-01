@@ -39,7 +39,6 @@ $SrcDir = Join-Path $RepoRoot "src"
 
 function Write-Step($msg) { Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "   $msg" -ForegroundColor Green }
-function Write-Warn($msg) { Write-Host "   $msg" -ForegroundColor Yellow }
 
 function Assert-Tool($name) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {

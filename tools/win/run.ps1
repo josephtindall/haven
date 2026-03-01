@@ -92,7 +92,9 @@ try {
     if (-not $Prod) {
         Write-Host ""
         Write-Host "   Endpoints (dev mode):" -ForegroundColor DarkGray
-        Write-Host "     Haven API  : http://localhost:8080" -ForegroundColor DarkGray
+        if (-not $DbOnly) {
+            Write-Host "     Haven API  : http://localhost:8080" -ForegroundColor DarkGray
+        }
         Write-Host "     PostgreSQL : localhost:5432" -ForegroundColor DarkGray
         Write-Host "     Redis      : localhost:6379" -ForegroundColor DarkGray
     }
@@ -100,7 +102,12 @@ try {
     Write-Host ""
 
     & docker @args_
-    if ($LASTEXITCODE -ne 0) { Write-Error "docker compose failed with exit code $LASTEXITCODE." }
+
+    # Exit code 130 (or similar) is normal when the user presses Ctrl+C.
+    # Only report genuine failures.
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 130) {
+        Write-Error "docker compose failed with exit code $LASTEXITCODE."
+    }
 }
 finally {
     Pop-Location
