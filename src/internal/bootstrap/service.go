@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/josephtindall/haven/pkg/crypto"
@@ -216,13 +217,21 @@ func (s *Service) regenerateToken(ctx context.Context) error {
 	}
 
 	// Print to stdout — this is intentional. Operators read it from container logs.
-	fmt.Printf("\n")
-	fmt.Printf("╔═══════════════════════════════════════════╗\n")
-	fmt.Printf("║  HAVEN SETUP CODE (expires in 2 hours)    ║\n")
-	fmt.Printf("╠═══════════════════════════════════════════╣\n")
 	display := raw[:4] + "-" + raw[4:]
-	fmt.Printf("║              %-9s                    ║\n", display)
-	fmt.Printf("╚═══════════════════════════════════════════╝\n")
+	expiryLocal := expiry.Local().Format("3:04 PM")
+	header := fmt.Sprintf("  HAVEN SETUP CODE (expires at %s)", expiryLocal)
+	boxWidth := len(header) + 2 // +2 for ║ borders
+	if boxWidth < 45 {
+		boxWidth = 45
+	}
+	inner := boxWidth - 2
+	fmt.Printf("\n")
+	fmt.Printf("╔%s╗\n", strings.Repeat("═", inner))
+	fmt.Printf("║%-*s║\n", inner, header)
+	fmt.Printf("╠%s╣\n", strings.Repeat("═", inner))
+	pad := (inner - len(display)) / 2
+	fmt.Printf("║%s%-*s║\n", strings.Repeat(" ", pad), inner-pad, display)
+	fmt.Printf("╚%s╝\n", strings.Repeat("═", inner))
 	fmt.Printf("\n")
 	return nil
 }
