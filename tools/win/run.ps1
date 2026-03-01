@@ -1,37 +1,53 @@
-# run.ps1 — Start the Haven stack (database, cache, and server).
+# run.ps1 -- Start the Haven stack (database, cache, and server).
 #
 # USAGE (run from the repo root):
-#   .\tools\win\run.ps1              # start in development mode (default)
-#   .\tools\win\run.ps1 -Prod        # start in production mode
-#   .\tools\win\run.ps1 -Detach      # start detached (background)
-#   .\tools\win\run.ps1 -DbOnly      # start only postgres and redis
+#   .\tools\win\run.ps1              # dev mode -- live-reload Go server
+#   .\tools\win\run.ps1 -Fresh       # dev mode -- wipe DB first (resets Haven to UNCLAIMED for setup wizard)
+#   .\tools\win\run.ps1 -Prod        # production mode (requires .env)
+#   .\tools\win\run.ps1 -Detach      # start in background (combine with -Fresh or -Prod)
+#   .\tools\win\run.ps1 -DbOnly      # postgres + redis only (run Go server locally)
 #
 # WHAT THIS DOES:
 #   Development mode (default):
 #     - Starts PostgreSQL 16, Redis 7, and Haven with live-reload (Air).
-#     - Postgres is exposed on localhost:5432, Redis on localhost:6379,
-#       Haven on localhost:8080.
-#     - Source code is bind-mounted — edit files and the server auto-restarts.
-#     - Safe dev defaults are used when .env is missing (devpassword, zero-key JWT).
+#     - Go source (src/) is bind-mounted -- edit .go files and the server
+#       restarts automatically. No rebuild needed.
+#     - Safe dev defaults apply when .env is missing (devpassword, zero-key JWT).
+#     - Exposed ports:
+#         http://localhost:8080  Haven API
+#         localhost:5432         PostgreSQL
+#         localhost:6379         Redis
 #
-#   Production mode (-Prod):
-#     - Starts the production stack. Haven is NOT exposed directly — it expects
-#       a reverse proxy (Caddy) in the consuming project's compose file.
-#     - Requires a .env file with real secrets. The server will refuse to start
-#       without HAVEN_JWT_SIGNING_KEY and HAVEN_DB_PASS.
+#   -Fresh (Full reset to UNCLAIMED -- use this to test the setup wizard):
+#     - Tears down the running stack and deletes the database + Redis volumes.
+#     - On restart, Haven initialises from scratch in UNCLAIMED state.
+#     - A new one-time setup code is printed to Haven's startup logs.
+#     - To retrieve the code after starting detached:
+#         docker compose -f docker-compose.dev.yml logs haven
 #
-#   Database only (-DbOnly):
-#     - Starts only postgres and redis. Useful when you want to run the Go
-#       server directly on the host with `go run ./cmd/server` from src/.
+#   -Dev -Fresh (one-liner for newcomers):
+#     - Builds the dev Docker image, wipes DB, and starts the full stack.
+#     - Everything you need from a fresh clone in one command.
+#
+#   -Prod (production mode):
+#     - Uses docker-compose.yml (production image, no bind mounts, no dev defaults).
+#     - Requires a .env file with real secrets. The server refuses to start without
+#       HAVEN_JWT_SIGNING_KEY and HAVEN_DB_PASS.
+#     - Copy .env.example to .env and fill in values before using this flag.
+#
+#   -DbOnly (infrastructure only):
+#     - Starts postgres and redis -- but not Haven itself.
+#     - In a separate terminal, run Go directly on the host:
+#         cd src && go run ./cmd/server
+#     - Useful for fast iteration without rebuilding/restarting the Go container.
 #
 # PREREQUISITES:
 #   - Docker Desktop must be running.
-#   - For production mode, copy .env.example to .env and fill in secrets:
-#       copy .env.example .env
-#       cd src && go run ./cmd/cli generate-secrets
-#     Then paste the output into .env.
+#   - Production only: copy .env.example to .env and fill in secrets.
 
 param(
+    [switch]$Fresh,
+    [switch]$Dev,
     [switch]$Prod,
     [switch]$Detach,
     [switch]$DbOnly
@@ -40,12 +56,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot ".." "..")
+$RepoRoot = Resolve-Path (Join-Path (Join-Path $PSScriptRoot "..") "..")
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------------------------------------------------------------------------
 
 function Write-Step($msg) { Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "   $msg" -ForegroundColor Green }
+function Write-Warn($msg) { Write-Host "   $msg" -ForegroundColor Yellow }
+function Write-Info($msg) { Write-Host "   $msg" -ForegroundColor DarkGray }
 
 function Assert-Tool($name) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
@@ -55,56 +73,94 @@ function Assert-Tool($name) {
 
 Assert-Tool "docker"
 
-# ── Determine compose file and services ──────────────────────────────────────
+# -- Compose file ------------------------------------------------------------------------------------------------------------------------
+
+$composeFile = if ($Prod) { "docker-compose.yml" } else { "docker-compose.dev.yml" }
+$mode        = if ($Prod) { "production" } else { "development" }
+
+# -- Production: require .env ------------------------------------------------------------------------------------------------
+
+if ($Prod -and -not (Test-Path (Join-Path $RepoRoot ".env"))) {
+    Write-Host ""
+    Write-Host "!! No .env file found -- production mode requires real secrets." -ForegroundColor Red
+    Write-Host "   Copy .env.example to .env, then fill in:" -ForegroundColor Yellow
+    Write-Host "     HAVEN_JWT_SIGNING_KEY, HAVEN_DB_PASS" -ForegroundColor Yellow
+    Write-Host ""
+}
 
 Push-Location $RepoRoot
 try {
-    if ($Prod) {
-        $composeFile = "docker-compose.yml"
-        $mode = "production"
-    } else {
-        $composeFile = "docker-compose.dev.yml"
-        $mode = "development"
+    # -- -Fresh: clean data and optionally rebuild ------------------------------------------------------
+
+    if ($Fresh) {
+        $cleanScript = Join-Path $PSScriptRoot "clean.ps1"
+
+        # 1. Wipe containers + volumes so Haven resets to UNCLAIMED.
+        Write-Step "Cleaning stale containers and data"
+        & PowerShell -ExecutionPolicy Bypass -File $cleanScript -Data
+        if ($LASTEXITCODE -ne 0) { Write-Error "Clean failed." }
+
+        # 2. If -Dev was also passed, rebuild the dev Docker image.
+        if ($Dev) {
+            $buildScript = Join-Path $PSScriptRoot "build.ps1"
+            Write-Step "Rebuilding development Docker image"
+            & PowerShell -ExecutionPolicy Bypass -File $buildScript -Dev
+            if ($LASTEXITCODE -ne 0) { Write-Error "Dev image build failed." }
+        }
+
+        Write-Warn "Haven will generate a new setup code on startup."
+        Write-Warn "Watch for it in the logs -- it looks like:"
+        Write-Warn "  ==========================================="
+        Write-Warn "    HAVEN SETUP CODE (expires at 5:30 PM)"
+        Write-Warn "               ABCD-EF7H"
+        Write-Warn "  ==========================================="
+        Write-Info "Use this code to complete the setup wizard."
     }
 
-    # Warn about missing .env in production mode.
-    if ($Prod -and -not (Test-Path (Join-Path $RepoRoot ".env"))) {
-        Write-Host "`n!! WARNING: No .env file found. Production mode requires real secrets." -ForegroundColor Red
-        Write-Host "   Copy .env.example to .env and run: cd src && go run ./cmd/cli generate-secrets" -ForegroundColor Yellow
-        Write-Host ""
-    }
+    # -- Build compose command --------------------------------------------------------------------------------------------
 
-    # Build the docker compose command.
-    $args_ = @("compose", "-f", $composeFile, "up")
+    $composeArgs = @("compose", "-f", $composeFile, "up")
+    if ($Detach) { $composeArgs += "-d" }
+    if ($DbOnly) { $composeArgs += @("postgres", "redis") }
 
-    if ($Detach) { $args_ += "-d" }
+    $label = $mode
+    if ($DbOnly) { $label += " (infrastructure only -- Haven not started)" }
+    if ($Fresh)  { $label += " [FRESH -- Haven is UNCLAIMED]" }
 
-    # If DbOnly, only start postgres and redis (not haven).
-    if ($DbOnly) {
-        $args_ += @("postgres", "redis")
-        $mode += " (database + redis only)"
-    }
-
-    Write-Step "Starting Haven in $mode mode"
-    Write-Host "   Compose file : $composeFile" -ForegroundColor DarkGray
-    Write-Host "   Command      : docker $($args_ -join ' ')" -ForegroundColor DarkGray
+    Write-Step "Starting Haven -- $label"
+    Write-Info "Compose file : $composeFile"
+    Write-Info "Command      : docker $($composeArgs -join ' ')"
 
     if (-not $Prod) {
         Write-Host ""
-        Write-Host "   Endpoints (dev mode):" -ForegroundColor DarkGray
+        Write-Info "Endpoints:"
         if (-not $DbOnly) {
-            Write-Host "     Haven API  : http://localhost:8080" -ForegroundColor DarkGray
+            Write-Info "  http://localhost:8080   Haven API"
         }
-        Write-Host "     PostgreSQL : localhost:5432" -ForegroundColor DarkGray
-        Write-Host "     Redis      : localhost:6379" -ForegroundColor DarkGray
+        Write-Info "  localhost:5432          PostgreSQL"
+        Write-Info "  localhost:6379          Redis"
+    }
+
+    if ($DbOnly) {
+        Write-Host ""
+        Write-Warn "Haven is not started. Run it locally in another terminal:"
+        Write-Info '  cd src'
+        Write-Info '  $env:HAVEN_DB_URL    = "postgres://haven_user:devpass@localhost:5432/haven?sslmode=disable&search_path=haven"'
+        Write-Info '  $env:HAVEN_REDIS_URL = "redis://localhost:6379"'
+        Write-Info '  go run ./cmd/server'
+    }
+
+    if ($Fresh -and $Detach) {
+        Write-Host ""
+        Write-Warn "Stack started in background. To find your setup code:"
+        Write-Info "  docker compose -f $composeFile logs haven"
     }
 
     Write-Host ""
 
-    & docker @args_
+    & docker @composeArgs
 
     # Exit code 130 (or similar) is normal when the user presses Ctrl+C.
-    # Only report genuine failures.
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 130) {
         Write-Error "docker compose failed with exit code $LASTEXITCODE."
     }

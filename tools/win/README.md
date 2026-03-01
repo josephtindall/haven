@@ -32,9 +32,22 @@ Once you see log output from the server, Haven is running at **http://localhost:
 
 To stop it, press **Ctrl+C** in the same terminal.
 
+### First time? Use -Dev -Fresh
+
+If you just cloned the repo and want everything built and running in one command:
+
+```powershell
+.\tools\win\run.ps1 -Dev -Fresh
+```
+
+This builds the dev Docker image, wipes any old data, and starts the full stack from scratch. Haven will print a setup code to the console — use it to complete the setup wizard.
+
 ### Other ways to run
 
 ```powershell
+# Wipe the database and start fresh (resets Haven to UNCLAIMED for the setup wizard)
+.\tools\win\run.ps1 -Fresh
+
 # Run in the background (terminal stays free, containers keep running)
 .\tools\win\run.ps1 -Detach
 
@@ -43,6 +56,12 @@ To stop it, press **Ctrl+C** in the same terminal.
 
 # Run in production mode (requires a .env file with real secrets — see below)
 .\tools\win\run.ps1 -Prod
+```
+
+When using `-Fresh -Detach`, the setup code is in the container logs:
+
+```powershell
+docker compose -f docker-compose.dev.yml logs haven
 ```
 
 ---
@@ -108,7 +127,7 @@ This stops Haven and deletes temporary files but **keeps your database data**.
 
 ```powershell
 # Preview what would be deleted without actually deleting anything
-.\tools\win\clean.ps1 -DryRun
+.\tools\win\clean.ps1 -WhatIf
 
 # Also wipe the database (you'll need to set up Haven from scratch after this)
 .\tools\win\clean.ps1 -Data
@@ -150,14 +169,16 @@ Then push:
 
 ## Quick Reference
 
-| I want to...                  | Command                              |
-|-------------------------------|--------------------------------------|
-| Start Haven                   | `.\tools\win\run.ps1`                |
-| Stop Haven                    | Ctrl+C (or `.\tools\win\clean.ps1`)  |
-| Build the Docker image        | `.\tools\win\build.ps1`              |
-| Delete everything and restart | `.\tools\win\clean.ps1 -Full`        |
-| See what clean would delete   | `.\tools\win\clean.ps1 -DryRun`      |
-| Push image to a registry      | `.\tools\win\publish.ps1 -Registry …`|
+| I want to...                  | Command                                |
+|-------------------------------|----------------------------------------|
+| Start Haven (first time)      | `.\tools\win\run.ps1 -Dev -Fresh`      |
+| Start Haven                   | `.\tools\win\run.ps1`                  |
+| Reset and start fresh         | `.\tools\win\run.ps1 -Fresh`           |
+| Stop Haven                    | Ctrl+C (or `.\tools\win\clean.ps1`)    |
+| Build the Docker image        | `.\tools\win\build.ps1`                |
+| Delete everything and restart | `.\tools\win\clean.ps1 -Full`          |
+| See what clean would delete   | `.\tools\win\clean.ps1 -WhatIf`        |
+| Push image to a registry      | `.\tools\win\publish.ps1 -Registry …`  |
 
 ---
 
@@ -170,4 +191,5 @@ Then push:
 | "port 5432 already in use" | Another Postgres is running. Stop it, or run `.\tools\win\clean.ps1` first. |
 | "permission denied" | Right-click your terminal and choose "Run as Administrator". |
 | Build seems stuck downloading | First build pulls base images (~300 MB). Subsequent builds are fast. |
-| Want to start fresh | `.\tools\win\clean.ps1 -Full` then `.\tools\win\run.ps1` |
+| Want to start fresh | `.\tools\win\run.ps1 -Dev -Fresh` |
+| Can't find the setup code | `docker compose -f docker-compose.dev.yml logs haven` |
